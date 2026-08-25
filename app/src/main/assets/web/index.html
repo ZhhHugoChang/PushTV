@@ -1,0 +1,235 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PushTV - 极速文件传送门</title>
+    <style>
+        :root {
+            --primary: #38BDF8;
+            --success: #10B981;
+            --bg-start: #0F172A;
+            --bg-end: #020617;
+            --card-bg: rgba(255, 255, 255, 0.03);
+            --border: rgba(255, 255, 255, 0.1);
+        }
+
+        body {
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: linear-gradient(180deg, var(--bg-start) 0%, var(--bg-end) 100%);
+            color: #FFFFFF;
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .container {
+            width: 90%;
+            max-width: 800px;
+            padding: 40px 0;
+        }
+
+        header { text-align: center; margin-bottom: 40px; }
+        h1 { font-size: 3rem; font-weight: 800; margin: 0; background: linear-gradient(90deg, #38BDF8, #818CF8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .subtitle { color: #94A3B8; margin-top: 8px; }
+
+        .tabs { display: flex; gap: 10px; margin-bottom: 24px; justify-content: center; }
+        .tab { padding: 10px 24px; border-radius: 20px; cursor: pointer; background: var(--card-bg); border: 1px solid var(--border); transition: 0.3s; }
+        .tab.active { background: var(--primary); border-color: var(--primary); font-weight: bold; }
+
+        .section { display: none; }
+        .section.active { display: block; }
+
+        .drop-zone { background: var(--card-bg); border: 2px dashed var(--border); border-radius: 24px; padding: 60px 20px; text-align: center; transition: 0.3s; cursor: pointer; }
+        .drop-zone.dragover { border-color: var(--primary); background: rgba(56, 189, 248, 0.05); transform: scale(1.01); }
+
+        .file-list { margin-top: 32px; width: 100%; }
+        .file-item { background: var(--card-bg); border-radius: 16px; padding: 16px; margin-bottom: 12px; border: 1px solid var(--border); }
+        .progress-bar { height: 6px; background: linear-gradient(90deg, var(--primary), var(--success)); width: 0%; transition: 0.3s; border-radius: 3px; }
+
+        .app-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+        .app-card { background: var(--card-bg); border-radius: 16px; padding: 20px; border: 1px solid var(--border); }
+
+        .search-container { margin-bottom: 24px; position: relative; }
+        .search-input {
+            width: 100%;
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 12px 16px;
+            color: white;
+            font-size: 1rem;
+            box-sizing: border-box;
+            outline: none;
+            transition: 0.3s;
+        }
+        .search-input:focus { border-color: var(--primary); background: rgba(255,255,255,0.05); }
+
+        .app-info { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+        .app-name { font-weight: bold; }
+        .app-pkg { font-size: 0.8rem; color: #64748B; }
+        .url-input { width: 100%; background: rgba(0,0,0,0.2); border: 1px solid var(--border); border-radius: 8px; padding: 10px; color: white; box-sizing: border-box; }
+        .save-btn { margin-top: 10px; background: var(--primary); color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; }
+
+        footer { margin-top: auto; padding: 24px; color: #475569; font-size: 0.85rem; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>PushTV</h1>
+            <p class="subtitle">✓ 电视端极速工具箱</p>
+        </header>
+
+        <div class="tabs">
+            <div class="tab active" onclick="showSection('upload', this)">文件传输</div>
+            <div class="tab" onclick="showSection('apps', this)">应用管理</div>
+        </div>
+
+        <div id="upload-section" class="section active">
+            <div class="drop-zone" id="dropZone">
+                <span style="font-size: 40px; display: block; margin-bottom: 10px;">📦</span>
+                <div class="upload-hint">拖拽 APK 到这里</div>
+                <input type="file" id="fileInput" accept=".apk" multiple style="display:none">
+            </div>
+            <div class="file-list" id="fileList"></div>
+        </div>
+
+        <div id="apps-section" class="section">
+            <div class="search-container">
+                <input type="text" id="appSearch" class="search-input" placeholder="搜索应用名称或包名..." oninput="filterApps()">
+            </div>
+            <div class="app-grid" id="appGrid">
+                <!-- 动态加载 -->
+            </div>
+        </div>
+    </div>
+
+    <footer>PushTV v2.5 - 专注电视端极速体验</footer>
+
+    <script>
+        function showSection(id, clickedTab) {
+            document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.getElementById(id + '-section').classList.add('active');
+            clickedTab.classList.add('active');
+            if(id === 'apps') loadApps();
+        }
+
+        // 文件上传逻辑 (保持原样并增强)
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        dropZone.onclick = () => fileInput.click();
+        dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('dragover'); };
+        dropZone.ondragleave = () => dropZone.classList.remove('dragover');
+        dropZone.ondrop = (e) => { e.preventDefault(); dropZone.classList.remove('dragover'); handleFiles(e.dataTransfer.files); };
+        fileInput.onchange = (e) => handleFiles(e.target.files);
+
+        function handleFiles(files) {
+            Array.from(files).forEach(file => { if(file.name.toLowerCase().endsWith('.apk')) uploadFile(file); });
+        }
+
+        function uploadFile(file) {
+            const id = 'f-' + Math.random().toString(36).substr(2, 9);
+            const item = document.createElement('div');
+            item.className = 'file-item';
+            item.innerHTML = `
+                <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+                    <span>${file.name}</span><span id="${id}-status">准备中</span>
+                </div>
+                <div style="height:4px;background:rgba(255,255,255,0.05);border-radius:2px;overflow:hidden">
+                    <div id="${id}-bar" class="progress-bar"></div>
+                </div>
+            `;
+            document.getElementById('fileList').prepend(item);
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/api/upload');
+            xhr.upload.onprogress = (e) => {
+                const p = Math.round((e.loaded / e.total) * 100);
+                document.getElementById(id + '-bar').style.width = p + '%';
+                document.getElementById(id + '-status').innerText = p + '%';
+            };
+            xhr.onload = () => {
+                const status = document.getElementById(id + '-status');
+                let payload = {};
+                try { payload = JSON.parse(xhr.responseText); } catch (_) {}
+                if (xhr.status >= 200 && xhr.status < 300 && payload.success === true) {
+                    status.innerText = '✓ 已送达';
+                } else {
+                    status.innerText = payload.message || `上传失败 (${xhr.status})`;
+                }
+            };
+            xhr.onerror = () => { document.getElementById(id + '-status').innerText = '网络连接失败'; };
+            const fd = new FormData(); fd.append('file', file);
+            xhr.send(fd);
+        }
+
+        // 应用管理逻辑
+        let allApps = [];
+
+        async function loadApps() {
+            const grid = document.getElementById('appGrid');
+            if (allApps.length === 0) {
+                grid.innerHTML = '<div style="grid-column: 1/-1; text-align:center">正在读取电视上的 App 列表...</div>';
+            }
+            try {
+                const res = await fetch('/api/apps');
+                allApps = await res.json();
+                filterApps(); // 初始渲染
+            } catch(e) { grid.innerHTML = '加载失败，请检查连接'; }
+        }
+
+        function filterApps() {
+            const query = document.getElementById('appSearch').value.toLowerCase();
+            const filtered = allApps.filter(app =>
+                app.name.toLowerCase().includes(query) ||
+                app.packageName.toLowerCase().includes(query)
+            );
+            renderApps(filtered);
+        }
+
+        function renderApps(apps) {
+            const grid = document.getElementById('appGrid');
+            grid.innerHTML = '';
+            if (apps.length === 0) {
+                grid.innerHTML = '<div style="grid-column: 1/-1; text-align:center; color: #64748B; margin-top: 20px;">未找到匹配的应用</div>';
+                return;
+            }
+            apps.forEach(app => {
+                const card = document.createElement('div');
+                card.className = 'app-card';
+                card.innerHTML = `
+                    <div class="app-info">
+                        <div class="app-name">${app.name}</div>
+                        <div class="app-pkg">${app.packageName} (${app.version})</div>
+                    </div>
+                    <input type="text" class="url-input" id="url-${app.packageName}" value="${app.url || ''}" placeholder="GitHub APK 直链">
+                    <button class="save-btn" onclick="saveUrl('${app.packageName}')">同步到电视</button>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        async function saveUrl(pkg) {
+            const url = document.getElementById('url-' + pkg).value;
+            const fd = new URLSearchParams();
+            fd.append('packageName', pkg);
+            fd.append('url', url);
+            try {
+                const res = await fetch('/api/save_url', { method: 'POST', body: fd });
+                const payload = await res.json();
+                if (res.ok && payload.success === true) {
+                    alert('同步成功！现在可以在电视上点更新了。');
+                } else {
+                    alert(payload.message || `同步失败 (${res.status})`);
+                }
+            } catch (_) {
+                alert('同步失败，请检查连接');
+            }
+        }
+    </script>
+</body>
+</html>
