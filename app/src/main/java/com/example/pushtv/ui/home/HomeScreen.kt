@@ -81,6 +81,7 @@ internal object TvFocusKeys {
     const val HOME_CLEAR = "home:clear"
     const val SOFTWARE_ALL = "software:filter:all"
     const val SOFTWARE_FAVORITES = "software:filter:favorites"
+    const val SOFTWARE_HIDE_SYSTEM = "software:hide_system"
     const val SOFTWARE_CHECK = "software:check"
 
     fun file(path: String) = "home:file:$path"
@@ -91,6 +92,7 @@ internal object TvFocusKeys {
         HOME_CLEAR,
         SOFTWARE_ALL,
         SOFTWARE_FAVORITES,
+        SOFTWARE_HIDE_SYSTEM,
         SOFTWARE_CHECK
     )
 }
@@ -248,7 +250,16 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel(), softwareViewModel: Softwa
                             if (apk.isInstalled) {
                                 baseActions + listOf(
                                     ActionItem("打开", Icons.Default.PlayArrow, Color(0xFF38BDF8)) { viewModel.openApp(apk.packageName); closeDrawerAndRestore() },
-                                    ActionItem("卸载", Icons.Default.DeleteForever, Color(0xFFEF4444)) { viewModel.uninstallApp(apk.packageName); closeDrawerAndRestore() }
+                                    ActionItem("卸载", Icons.Default.DeleteForever, Color(0xFFEF4444)) {
+                                        confirmationRequest = ConfirmationRequest(
+                                            title = "确认卸载",
+                                            message = "确定要卸载 ${apk.name} 吗？",
+                                            onConfirm = { viewModel.uninstallApp(apk.packageName) }
+                                        )
+                                        drawerActions = null
+                                        drawerPackageName = null
+                                        focusLayer = FocusLayer.CONFIRM_DIALOG
+                                    }
                                 )
                             } else baseActions
                         }
@@ -305,6 +316,18 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel(), softwareViewModel: Softwa
                                 focusLayer = FocusLayer.URL_DIALOG
                             })
                             add(ActionItem("打开", Icons.Default.PlayArrow, Color(0xFF38BDF8)) { viewModel.openApp(app.packageName); closeDrawerAndRestore() })
+                            if (!app.isSystemApp) {
+                                add(ActionItem("卸载", Icons.Default.DeleteForever, Color(0xFFEF4444)) {
+                                    confirmationRequest = ConfirmationRequest(
+                                        title = "确认卸载",
+                                        message = "确定要卸载 ${app.name} 吗？",
+                                        onConfirm = { viewModel.uninstallApp(app.packageName) }
+                                    )
+                                    drawerActions = null
+                                    drawerPackageName = null
+                                    focusLayer = FocusLayer.CONFIRM_DIALOG
+                                })
+                            }
                         }.toList()
                         focusLayer = FocusLayer.DRAWER
                     },

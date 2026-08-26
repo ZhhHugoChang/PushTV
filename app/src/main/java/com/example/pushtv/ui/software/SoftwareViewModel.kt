@@ -37,7 +37,8 @@ data class InstalledApp(
     val remoteStatus: String? = null, // 新增：连接状态描述
     val assets: List<GitHubAsset> = emptyList(),
     val changelog: String? = null,
-    val isFavorite: Boolean = false
+    val isFavorite: Boolean = false,
+    val isSystemApp: Boolean = false
 )
 
 enum class FilterMode {
@@ -62,10 +63,18 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
     private val _filterMode = MutableStateFlow(FilterMode.FAVORITES)
     val filterMode: StateFlow<FilterMode> = _filterMode
 
-    val filteredApps = combine(_installedApps, _filterMode) { apps, mode ->
-        when (mode) {
+    private val _hideSystemApps = MutableStateFlow(true)
+    val hideSystemApps: StateFlow<Boolean> = _hideSystemApps
+
+    val filteredApps = combine(_installedApps, _filterMode, _hideSystemApps) { apps, mode, hideSystem ->
+        val baseList = when (mode) {
             FilterMode.ALL -> apps
             FilterMode.FAVORITES -> apps.filter { it.isFavorite }
+        }
+        if (hideSystem) {
+            baseList.filter { !it.isSystemApp }
+        } else {
+            baseList
         }
     }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
@@ -86,6 +95,10 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
         _filterMode.value = mode
     }
 
+    fun toggleHideSystemApps() {
+        _hideSystemApps.value = !_hideSystemApps.value
+    }
+
     fun toggleFavorite(app: InstalledApp) {
         viewModelScope.launch {
             SettingsRepo.setFavorite(context, app.packageName, !app.isFavorite)
@@ -102,6 +115,7 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
             val appList = apps.distinctBy { it.packageName }.map { appInfo ->
                 val packageInfo = pm.getPackageInfo(appInfo.packageName, 0)
                 val settings = savedSettings[appInfo.packageName]
+                val isSystem = (appInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
 
                 InstalledApp(
                     name = pm.getApplicationLabel(appInfo).toString(),
@@ -109,7 +123,8 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
                     icon = pm.getApplicationIcon(appInfo), // Pass Drawable directly to Coil
                     versionName = packageInfo.versionName ?: "unknown",
                     updateUrl = settings?.updateUrl.orEmpty(),
-                    isFavorite = settings?.isFavorite == true
+                    isFavorite = settings?.isFavorite == true,
+                    isSystemApp = isSystem
                 )
             }.sortedBy { it.name }
             

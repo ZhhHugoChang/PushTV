@@ -8,6 +8,7 @@ import android.graphics.Canvas
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.net.ConnectivityManager
+import android.net.Uri
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
@@ -66,6 +67,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         refreshFileList()
         refreshStorageInfo()
         registerNetworkCallback()
+
+        viewModelScope.launch {
+            com.example.pushtv.utils.Events.refreshAppsSignal.collect {
+                refreshFileList()
+            }
+        }
     }
 
     private fun registerNetworkCallback() {
@@ -178,10 +185,46 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun uninstallApp(packageName: String) {
-        val intent = android.content.Intent(android.content.Intent.ACTION_DELETE)
-        intent.data = android.net.Uri.parse("package:$packageName")
+        if (packageName.isBlank()) {
+            android.widget.Toast.makeText(context, "无法确定要卸载的应用", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val packageManager = context.packageManager
+        try {
+            // Do not open the installer for a stale list entry. This also avoids a
+            // silent return on devices whose package installer rejects unknown packages.
+            packageManager.getApplicationInfo(packageName, 0)
+        } catch (_: PackageManager.NameNotFoundException) {
+            android.widget.Toast.makeText(context, "应用已经不存在", android.widget.Toast.LENGTH_SHORT).show()
+            com.example.pushtv.utils.Events.triggerRefreshApps()
+            return
+        }
+
+        val packageUri = Uri.fromParts("package", packageName, null)
+        val uninstallIntents = listOf(
+            android.content.Intent(android.content.Intent.ACTION_DELETE, packageUri),
+            // Some older Android TV/OEM package installers only register this alias.
+            android.content.Intent(android.content.Intent.ACTION_UNINSTALL_PACKAGE, packageUri)
+        )
+        val intent = uninstallIntents.firstOrNull { candidate ->
+            packageManager.resolveActivity(candidate, 0) != null
+        }
+
+        if (intent == null) {
+            android.widget.Toast.makeText(context, "系统不支持卸载应用", android.widget.Toast.LENGTH_LONG).show()
+            return
+        }
+
         intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-        context.startActivity(intent)
+        intent.putExtra(android.content.Intent.EXTRA_RETURN_RESULT, true)
+        try {
+            context.startActivity(intent)
+        } catch (_: android.content.ActivityNotFoundException) {
+            android.widget.Toast.makeText(context, "找不到系统卸载程序", android.widget.Toast.LENGTH_LONG).show()
+        } catch (_: SecurityException) {
+            android.widget.Toast.makeText(context, "系统禁止卸载此应用", android.widget.Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun parseApkInfo(context: Context, file: File): ApkInfo {

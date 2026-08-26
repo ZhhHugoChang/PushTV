@@ -53,9 +53,9 @@
         .app-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
         .app-card { background: var(--card-bg); border-radius: 16px; padding: 20px; border: 1px solid var(--border); }
 
-        .search-container { margin-bottom: 24px; position: relative; }
+        .search-container { margin-bottom: 24px; display: flex; gap: 12px; }
         .search-input {
-            width: 100%;
+            flex: 1;
             background: var(--card-bg);
             border: 1px solid var(--border);
             border-radius: 12px;
@@ -67,6 +67,22 @@
             transition: 0.3s;
         }
         .search-input:focus { border-color: var(--primary); background: rgba(255,255,255,0.05); }
+
+        .toggle-btn {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 0 16px;
+            color: #94A3B8;
+            cursor: pointer;
+            transition: 0.3s;
+            display: flex;
+            align-items: center;
+            white-space: nowrap;
+            font-size: 0.9rem;
+        }
+        .toggle-btn:hover { background: rgba(255,255,255,0.05); }
+        .toggle-btn.active { border-color: var(--primary); color: var(--primary); background: rgba(56, 189, 248, 0.1); }
 
         .app-info { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
         .app-name { font-weight: bold; }
@@ -86,13 +102,13 @@
 
         <div class="tabs">
             <div class="tab active" onclick="showSection('upload', this)">文件传输</div>
-            <div class="tab" onclick="showSection('apps', this)">应用管理</div>
+            <div class="tab" onclick="showSection('apps', this)">更新管理</div>
         </div>
 
         <div id="upload-section" class="section active">
             <div class="drop-zone" id="dropZone">
                 <span style="font-size: 40px; display: block; margin-bottom: 10px;">📦</span>
-                <div class="upload-hint">拖拽 APK 到这里</div>
+                <div class="upload-hint">拖拽/点击上传 APK 到这里</div>
                 <input type="file" id="fileInput" accept=".apk" multiple style="display:none">
             </div>
             <div class="file-list" id="fileList"></div>
@@ -101,6 +117,7 @@
         <div id="apps-section" class="section">
             <div class="search-container">
                 <input type="text" id="appSearch" class="search-input" placeholder="搜索应用名称或包名..." oninput="filterApps()">
+                <button id="systemToggle" class="toggle-btn active" onclick="toggleSystemApps()">隐藏系统应用</button>
             </div>
             <div class="app-grid" id="appGrid">
                 <!-- 动态加载 -->
@@ -108,7 +125,7 @@
         </div>
     </div>
 
-    <footer>PushTV v2.5 - 专注电视端极速体验</footer>
+    <footer>PushTV - 专注电视端极速体验</footer>
 
     <script>
         function showSection(id, clickedTab) {
@@ -169,6 +186,7 @@
 
         // 应用管理逻辑
         let allApps = [];
+        let hideSystem = true;
 
         async function loadApps() {
             const grid = document.getElementById('appGrid');
@@ -182,9 +200,23 @@
             } catch(e) { grid.innerHTML = '加载失败，请检查连接'; }
         }
 
+        function toggleSystemApps() {
+            hideSystem = !hideSystem;
+            const btn = document.getElementById('systemToggle');
+            btn.classList.toggle('active', hideSystem);
+            btn.innerText = hideSystem ? '隐藏系统应用' : '显示系统应用';
+            filterApps();
+        }
+
         function filterApps() {
             const query = document.getElementById('appSearch').value.toLowerCase();
-            const filtered = allApps.filter(app =>
+            let filtered = allApps;
+
+            if (hideSystem) {
+                filtered = filtered.filter(app => !app.isSystem);
+            }
+
+            filtered = filtered.filter(app =>
                 app.name.toLowerCase().includes(query) ||
                 app.packageName.toLowerCase().includes(query)
             );
@@ -206,7 +238,7 @@
                         <div class="app-name">${app.name}</div>
                         <div class="app-pkg">${app.packageName} (${app.version})</div>
                     </div>
-                    <input type="text" class="url-input" id="url-${app.packageName}" value="${app.url || ''}" placeholder="GitHub APK 直链">
+                    <input type="text" class="url-input" id="url-${app.packageName}" value="${app.url || ''}" placeholder="GitHub 项目地址">
                     <button class="save-btn" onclick="saveUrl('${app.packageName}')">同步到电视</button>
                 `;
                 grid.appendChild(card);

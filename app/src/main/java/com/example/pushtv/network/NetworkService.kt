@@ -86,11 +86,13 @@ class NetworkService : Service() {
                         val savedSettings = SettingsRepo.getAllSettings(applicationContext)
                         val appList = apps.map { appInfo ->
                             val packageInfo = pm.getPackageInfo(appInfo.packageName, 0)
+                            val isSystem = (appInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
                             JSONObject().apply {
                                 put("name", pm.getApplicationLabel(appInfo).toString())
                                 put("packageName", appInfo.packageName)
                                 put("version", packageInfo.versionName.orEmpty())
                                 put("url", savedSettings[appInfo.packageName]?.updateUrl.orEmpty())
+                                put("isSystem", isSystem)
                             }
                         }
                         call.respondText(JSONArray(appList).toString(), ContentType.Application.Json)

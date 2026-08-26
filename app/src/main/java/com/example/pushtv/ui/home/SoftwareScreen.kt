@@ -59,10 +59,12 @@ fun SoftwareListScreen(
 ) {
     val apps by viewModel.filteredApps.collectAsState()
     val filterMode by viewModel.filterMode.collectAsState()
+    val hideSystemApps by viewModel.hideSystemApps.collectAsState()
     val favoriteUpdateCount by viewModel.favoriteUpdateCount.collectAsState()
     val activeTransfers by homeViewModel.activeTransfers.collectAsState()
     val allFilterRequester = focusRequesterMap.getOrPut(TvFocusKeys.SOFTWARE_ALL) { FocusRequester() }
     val favoritesFilterRequester = focusRequesterMap.getOrPut(TvFocusKeys.SOFTWARE_FAVORITES) { FocusRequester() }
+    val hideSystemRequester = focusRequesterMap.getOrPut(TvFocusKeys.SOFTWARE_HIDE_SYSTEM) { FocusRequester() }
     val checkRequester = focusRequesterMap.getOrPut(TvFocusKeys.SOFTWARE_CHECK) { FocusRequester() }
     val appKeys = apps.map { TvFocusKeys.app(it.packageName) }
     appKeys.forEach { key -> focusRequesterMap.getOrPut(key) { FocusRequester() } }
@@ -70,6 +72,7 @@ fun SoftwareListScreen(
     val selectedFilterRequester = if (filterMode == FilterMode.FAVORITES) favoritesFilterRequester else allFilterRequester
     val gridState = rememberLazyGridState()
     val focusScope = rememberCoroutineScope()
+    var lastFocusIndex by remember { mutableIntStateOf(-1) }
     var initialFocusPlaced by remember { mutableStateOf(false) }
 
     val enterCurrentAppList: () -> Boolean = {
@@ -110,11 +113,22 @@ fun SoftwareListScreen(
 
     LaunchedEffect(appKeys, isFocusActive) {
         if (isFocusActive && preferredFocusKey?.startsWith("software:app:") == true && preferredFocusKey !in appKeys) {
+            // 说明之前选中的应用被卸载了
             withFrameNanos { }
-            val firstAppFocused = firstAppRequester?.let {
+            // 尝试聚焦相同索引位置的新应用，如果超出范围则选最后一个
+            val targetIndex = if (lastFocusIndex >= appKeys.size) appKeys.size - 1 else lastFocusIndex
+            val nextBestKey = appKeys.getOrNull(targetIndex)
+            
+            val focused = nextBestKey?.let { focusRequesterMap[it] }?.let {
                 runCatching { it.requestFocus(); true }.getOrDefault(false)
             } == true
-            if (!firstAppFocused) selectedFilterRequester.requestFocus()
+            
+            if (!focused) {
+                val firstAppFocused = firstAppRequester?.let {
+                    runCatching { it.requestFocus(); true }.getOrDefault(false)
+                } == true
+                if (!firstAppFocused) selectedFilterRequester.requestFocus()
+            }
         }
     }
 
@@ -125,7 +139,7 @@ fun SoftwareListScreen(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             val title = when(filterMode) {
-                FilterMode.FAVORITES -> "常用软件 (收藏)"
+                FilterMode.FAVORITES -> "我的收藏"
                 FilterMode.ALL -> "所有应用"
             }
             Text(title, style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold), color = Color.White)
@@ -164,10 +178,45 @@ fun SoftwareListScreen(
                             .then(enterListOnDown)
                             .focusProperties {
                                 left = allFilterRequester
-                                right = checkRequester
+                                right = hideSystemRequester
                             }
                             .onFocusChanged { if (it.isFocused) onFocusKeyChanged(TvFocusKeys.SOFTWARE_FAVORITES) }
                     ) { viewModel.setFilterMode(it) }
+                }
+
+                // Hide/Show System Apps Toggle
+                Button(
+                    onClick = { viewModel.toggleHideSystemApps() },
+                    scale = ButtonDefaults.scale(focusedScale = 1f),
+                    modifier = Modifier
+                        .focusRequester(hideSystemRequester)
+                        .then(enterListOnDown)
+                        .focusProperties {
+                            left = favoritesFilterRequester
+                            right = checkRequester
+                        }
+                        .onFocusChanged { if (it.isFocused) onFocusKeyChanged(TvFocusKeys.SOFTWARE_HIDE_SYSTEM) },
+                    colors = ButtonDefaults.colors(
+                        containerColor = Color.White.copy(alpha = 0.05f),
+                        focusedContainerColor = Color(0xFF64748B),
+                        contentColor = Color.White,
+                        focusedContentColor = Color.White
+                    ),
+                    shape = ButtonDefaults.shape(shape = RoundedCornerShape(12.dp)),
+                    border = ButtonDefaults.border(
+                        focusedBorder = Border(BorderStroke(2.dp, Color.White), inset = (-1).dp)
+                    )
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = if (hideSystemApps) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(if (hideSystemApps) "隐藏系统应用" else "显示系统应用", style = MaterialTheme.typography.labelLarge)
+                    }
                 }
 
                 // Global Check Update Button
@@ -180,7 +229,7 @@ fun SoftwareListScreen(
                         .focusRequester(checkRequester)
                         .then(enterListOnDown)
                         .focusProperties {
-                            left = favoritesFilterRequester
+                            left = hideSystemRequester
                             right = FocusRequester.Cancel
                         }
                         .onFocusChanged { if (it.isFocused) onFocusKeyChanged(TvFocusKeys.SOFTWARE_CHECK) },
@@ -255,7 +304,12 @@ fun SoftwareListScreen(
                                 right = rightRequester ?: FocusRequester.Cancel
                                 if (index < 2) up = selectedFilterRequester
                             }
-                            .onFocusChanged { if (it.isFocused) onFocusKeyChanged(key) }
+                            .onFocusChanged { 
+                                if (it.isFocused) {
+                                    onFocusKeyChanged(key)
+                                    lastFocusIndex = index
+                                }
+                            }
                             .then(if (hasUpdate) Modifier.border(2.dp, Color(0xFF10B981).copy(alpha = 0.5f), RoundedCornerShape(16.dp)) else Modifier)
                     )
                 }
