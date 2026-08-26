@@ -320,7 +320,12 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
 
     fun downloadAndInstall(app: InstalledApp, specificUrl: String? = null) {
         val urlToUse = specificUrl ?: app.updateUrl
-        if (urlToUse.isBlank()) return
+        if (urlToUse.isBlank()) {
+            android.widget.Toast.makeText(context, "没有可用的下载地址", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        android.widget.Toast.makeText(context, "开始下载 ${app.name}", android.widget.Toast.LENGTH_SHORT).show()
         
         viewModelScope.launch(Dispatchers.IO) {
             val transferId = "download:${app.packageName}:${System.nanoTime()}"

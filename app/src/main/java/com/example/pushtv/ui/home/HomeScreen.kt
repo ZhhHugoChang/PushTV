@@ -48,6 +48,7 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.*
 import coil.compose.AsyncImage
+import com.example.pushtv.data.TransferManager
 import com.example.pushtv.data.TransferProgress
 import com.example.pushtv.ui.software.FilterMode
 import com.example.pushtv.ui.software.InstalledApp
@@ -279,10 +280,10 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel(), softwareViewModel: Softwa
                                 drawerPackageName = null
                                 focusLayer = FocusLayer.CONFIRM_DIALOG
                             },
-                            ActionItem("清除安装包", Icons.Default.DeleteSweep, Color(0xFFEF4444)) {
+                            ActionItem("清除安装包和历史", Icons.Default.DeleteSweep, Color(0xFFEF4444)) {
                                 confirmationRequest = ConfirmationRequest(
-                                    title = "确认清除安装包",
-                                    message = "确定要删除全部已接收的安装包吗？此操作不可撤销。",
+                                    title = "确认全部清除",
+                                    message = "确定要删除全部安装包和接收历史吗？此操作不可撤销。",
                                     onConfirm = viewModel::clearAllFiles
                                 )
                                 drawerActions = null
@@ -444,6 +445,10 @@ fun ActionDrawer(
     
     val apps by (softwareViewModel?.installedApps ?: remember { MutableStateFlow<List<InstalledApp>>(emptyList()) }).collectAsState()
     val currentApp = if (packageName != null) apps.find { it.packageName == packageName } else null
+    val activeTransfers by TransferManager.activeTransfers.collectAsState()
+    val currentDownload = currentApp?.let { app ->
+        activeTransfers.lastOrNull { it.id.startsWith("download:${app.packageName}:") }
+    }
     
     val recommendedAsset = currentApp?.assets?.find { it.isRecommended }
     val primaryAsset = recommendedAsset ?: currentApp?.assets?.firstOrNull()
@@ -596,6 +601,10 @@ fun ActionDrawer(
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
+                    currentDownload?.let { transfer ->
+                        DownloadProgress(transfer)
+                    }
+
                     if (primaryAsset != null) {
                         Text(
                             if (primaryAsset.isRecommended) "推荐升级:" else "可用更新:",
@@ -700,6 +709,49 @@ fun ActionDrawer(
                     Spacer(modifier = Modifier.height(24.dp))
                 }
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun DownloadProgress(transfer: TransferProgress) {
+    val statusText = when {
+        transfer.errorMessage != null -> "下载失败"
+        transfer.isComplete -> "下载完成"
+        else -> "正在下载"
+    }
+    val statusColor = when {
+        transfer.errorMessage != null -> Color(0xFFEF4444)
+        transfer.isComplete -> Color(0xFF10B981)
+        else -> Color(0xFF38BDF8)
+    }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(statusText, style = MaterialTheme.typography.labelMedium, color = statusColor)
+            Spacer(modifier = Modifier.weight(1f))
+            Text(
+                if (transfer.errorMessage != null) transfer.errorMessage else "${transfer.progress}%",
+                style = MaterialTheme.typography.labelMedium,
+                color = statusColor,
+                maxLines = 1
+            )
+        }
+        Spacer(modifier = Modifier.height(6.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(6.dp)
+                .clip(RoundedCornerShape(3.dp))
+                .background(Color.White.copy(alpha = 0.12f))
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(transfer.progress.coerceIn(0, 100) / 100f)
+                    .fillMaxHeight()
+                    .background(statusColor, RoundedCornerShape(3.dp))
+            )
         }
     }
 }

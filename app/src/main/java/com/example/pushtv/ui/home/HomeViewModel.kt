@@ -170,9 +170,17 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun clearAllFiles() {
         viewModelScope.launch(Dispatchers.IO) {
             val dir = File(context.cacheDir, "incoming")
-            dir.listFiles()?.forEach { it.delete() }
+            val allDeleted = dir.listFiles().orEmpty().all { it.deleteRecursively() }
             refreshFileList()
             refreshStorageInfo()
+            withContext(Dispatchers.Main) {
+                val message = if (allDeleted) {
+                    "安装包和接收历史已清除"
+                } else {
+                    "部分文件清除失败，请稍后重试"
+                }
+                android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
