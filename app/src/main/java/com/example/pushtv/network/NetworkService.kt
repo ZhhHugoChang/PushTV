@@ -18,6 +18,7 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import io.ktor.server.request.*
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.PartData
 import io.ktor.http.content.*
@@ -30,7 +31,11 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.InputStream
 import java.io.File
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.util.UUID
+import java.util.zip.ZipFile
 
 class NetworkService : Service() {
     private var server: NettyApplicationEngine? = null
@@ -78,6 +83,9 @@ class NetworkService : Service() {
                 routing {
                     get("/") {
                         val htmlContent = loadAssetFile("web/index.html")
+                        call.response.header(HttpHeaders.CacheControl, "no-store, no-cache, must-revalidate, max-age=0")
+                        call.response.header(HttpHeaders.Pragma, "no-cache")
+                        call.response.header(HttpHeaders.Expires, "0")
                         call.respondText(htmlContent, io.ktor.http.ContentType.Text.Html)
                     }
                     get("/api/apps") {
@@ -121,6 +129,7 @@ class NetworkService : Service() {
                     }
                     post("/api/upload") {
                         var currentTransferId: String? = null
+                        var pendingFile: File? = null
                         try {
                             val multipart = call.receiveMultipart()
                             val uploadDir = File(applicationContext.cacheDir, "incoming")
@@ -130,17 +139,29 @@ class NetworkService : Service() {
                             var part = multipart.readPart()
                             while (part != null) {
                                 if (part is PartData.FileItem) {
-                                    val originalFileName = part.originalFileName ?: "upload.apk"
+                                    val originalFileName = File(part.originalFileName ?: "upload.apk").name
+                                    if (!originalFileName.endsWith(".apk", ignoreCase = true)) {
+                                        part.dispose()
+                                        call.respondText(
+                                            """{"success":false,"message":"仅支持 APK 文件"}""",
+                                            ContentType.Application.Json,
+                                            HttpStatusCode.UnsupportedMediaType
+                                        )
+                                        return@post
+                                    }
                                     val transferId = "upload:${UUID.randomUUID()}"
                                     currentTransferId = transferId
                                     TransferManager.startTransfer(transferId, originalFileName)
-                                    savedFile = File(uploadDir, "temp_${System.currentTimeMillis()}_$originalFileName")
+                                    val timestamp = System.currentTimeMillis()
+                                    val partFile = File(uploadDir, ".$timestamp-$originalFileName.part")
+                                    val completedFile = File(uploadDir, "$timestamp-$originalFileName")
+                                    pendingFile = partFile
                                     
                                     val contentLength = call.request.headers[io.ktor.http.HttpHeaders.ContentLength]?.toLong() ?: -1L
                                     var bytesWritten = 0L
-                                    
+                                    TransferManager.markTransferring(transferId)
                                     part.streamProvider().use { input ->
-                                        savedFile.outputStream().buffered().use { output ->
+                                        partFile.outputStream().buffered().use { output ->
                                             val buffer = ByteArray(8192)
                                             var bytes = input.read(buffer)
                                             while (bytes >= 0) {
@@ -154,6 +175,12 @@ class NetworkService : Service() {
                                             }
                                         }
                                     }
+                                    if (!isValidApk(partFile)) {
+                                        throw IllegalArgumentException("文件不是有效的 APK")
+                                    }
+                                    moveCompletedFile(partFile, completedFile)
+                                    pendingFile = null
+                                    savedFile = completedFile
                                     TransferManager.markComplete(transferId)
                                     currentTransferId = null
                                 }
@@ -177,16 +204,42 @@ class NetworkService : Service() {
                             }
                         } catch (e: Exception) {
                             e.printStackTrace()
-                            currentTransferId?.let { TransferManager.markFailed(it, e.message ?: "上传失败") }
+                            pendingFile?.delete()
+                            currentTransferId?.let {
+                                TransferManager.markFailed(it, e.message ?: "上传失败")
+                                TransferManager.remove(it)
+                            }
+                            val status = if (e is IllegalArgumentException) {
+                                HttpStatusCode.BadRequest
+                            } else {
+                                HttpStatusCode.InternalServerError
+                            }
                             call.respondText(
                                 JSONObject().put("success", false).put("message", e.message ?: "上传失败").toString(),
                                 ContentType.Application.Json,
-                                HttpStatusCode.InternalServerError
+                                status
                             )
                         }
                     }
                 }
             }.start(wait = false)
+        }
+    }
+
+    private fun isValidApk(file: File): Boolean = runCatching {
+        file.length() > 0 && ZipFile(file).use { it.getEntry("AndroidManifest.xml") != null }
+    }.getOrDefault(false)
+
+    private fun moveCompletedFile(source: File, destination: File) {
+        try {
+            Files.move(
+                source.toPath(),
+                destination.toPath(),
+                StandardCopyOption.ATOMIC_MOVE,
+                StandardCopyOption.REPLACE_EXISTING
+            )
+        } catch (_: AtomicMoveNotSupportedException) {
+            Files.move(source.toPath(), destination.toPath(), StandardCopyOption.REPLACE_EXISTING)
         }
     }
 

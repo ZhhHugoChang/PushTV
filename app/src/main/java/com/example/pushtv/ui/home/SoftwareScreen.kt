@@ -4,7 +4,6 @@ package com.example.pushtv.ui.home
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -26,6 +25,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -43,6 +43,7 @@ import coil.compose.AsyncImage
 import com.example.pushtv.ui.software.FilterMode
 import com.example.pushtv.ui.software.InstalledApp
 import com.example.pushtv.ui.software.SoftwareViewModel
+import com.example.pushtv.ui.theme.PushTVColors
 import androidx.activity.compose.BackHandler
 import kotlinx.coroutines.launch
 
@@ -50,7 +51,6 @@ import kotlinx.coroutines.launch
 @Composable
 fun SoftwareListScreen(
     viewModel: SoftwareViewModel = viewModel(),
-    homeViewModel: HomeViewModel = viewModel(),
     isFocusActive: Boolean,
     preferredFocusKey: String?,
     onFocusKeyChanged: (String) -> Unit,
@@ -61,7 +61,6 @@ fun SoftwareListScreen(
     val filterMode by viewModel.filterMode.collectAsState()
     val hideSystemApps by viewModel.hideSystemApps.collectAsState()
     val favoriteUpdateCount by viewModel.favoriteUpdateCount.collectAsState()
-    val activeTransfers by homeViewModel.activeTransfers.collectAsState()
     val allFilterRequester = focusRequesterMap.getOrPut(TvFocusKeys.SOFTWARE_ALL) { FocusRequester() }
     val favoritesFilterRequester = focusRequesterMap.getOrPut(TvFocusKeys.SOFTWARE_FAVORITES) { FocusRequester() }
     val hideSystemRequester = focusRequesterMap.getOrPut(TvFocusKeys.SOFTWARE_HIDE_SYSTEM) { FocusRequester() }
@@ -81,7 +80,7 @@ fun SoftwareListScreen(
             false
         } else {
             focusScope.launch {
-                runCatching { gridState.scrollToItem(activeTransfers.size) }
+                runCatching { gridState.scrollToItem(0) }
                 repeat(2) {
                     withFrameNanos { }
                     if (runCatching { requester.requestFocus(); true }.getOrDefault(false)) return@launch
@@ -142,7 +141,7 @@ fun SoftwareListScreen(
                 FilterMode.FAVORITES -> "我的收藏"
                 FilterMode.ALL -> "所有应用"
             }
-            Text(title, style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold), color = Color.White)
+            Text(title, style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold), color = PushTVColors.TextPrimary)
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -151,7 +150,7 @@ fun SoftwareListScreen(
                 // Filter Tabs
                 Row(
                     modifier = Modifier
-                        .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+                        .background(PushTVColors.TextPrimary.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
                         .padding(4.dp),
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
@@ -197,21 +196,21 @@ fun SoftwareListScreen(
                         }
                         .onFocusChanged { if (it.isFocused) onFocusKeyChanged(TvFocusKeys.SOFTWARE_HIDE_SYSTEM) },
                     colors = ButtonDefaults.colors(
-                        containerColor = Color.White.copy(alpha = 0.05f),
-                        focusedContainerColor = Color(0xFF64748B),
-                        contentColor = Color.White,
-                        focusedContentColor = Color.White
+                        containerColor = PushTVColors.TextPrimary.copy(alpha = 0.05f),
+                        focusedContainerColor = PushTVColors.TextMuted,
+                        contentColor = PushTVColors.TextPrimary,
+                        focusedContentColor = PushTVColors.TextPrimary
                     ),
                     shape = ButtonDefaults.shape(shape = RoundedCornerShape(12.dp)),
                     border = ButtonDefaults.border(
-                        focusedBorder = Border(BorderStroke(2.dp, Color.White), inset = (-1).dp)
+                        focusedBorder = Border(BorderStroke(2.dp, PushTVColors.TextPrimary), inset = (-1).dp)
                     )
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             imageVector = if (hideSystemApps) Icons.Default.VisibilityOff else Icons.Default.Visibility,
                             contentDescription = null,
-                            tint = Color.White,
+                            tint = PushTVColors.TextPrimary,
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
@@ -234,18 +233,18 @@ fun SoftwareListScreen(
                         }
                         .onFocusChanged { if (it.isFocused) onFocusKeyChanged(TvFocusKeys.SOFTWARE_CHECK) },
                     colors = ButtonDefaults.colors(
-                        containerColor = Color.White.copy(alpha = 0.05f),
-                        focusedContainerColor = Color(0xFF10B981),
-                        contentColor = Color.White,
-                        focusedContentColor = Color.White
+                        containerColor = PushTVColors.TextPrimary.copy(alpha = 0.05f),
+                        focusedContainerColor = PushTVColors.Success,
+                        contentColor = PushTVColors.TextPrimary,
+                        focusedContentColor = PushTVColors.TextPrimary
                     ),
                     shape = ButtonDefaults.shape(shape = RoundedCornerShape(12.dp)),
                     border = ButtonDefaults.border(
-                        focusedBorder = Border(BorderStroke(2.dp, Color.White), inset = (-1).dp)
+                        focusedBorder = Border(BorderStroke(2.dp, PushTVColors.TextPrimary), inset = (-1).dp)
                     )
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                        Icon(Icons.Default.Refresh, contentDescription = null, tint = PushTVColors.TextPrimary, modifier = Modifier.size(20.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("检测更新", style = MaterialTheme.typography.labelLarge)
                     }
@@ -265,9 +264,9 @@ fun SoftwareListScreen(
                         FilterMode.FAVORITES -> "暂无收藏软件"
                         FilterMode.ALL -> "未发现安装的应用"
                     }
-                    Icon(emptyIcon, contentDescription = null, modifier = Modifier.size(64.dp), tint = Color.White.copy(alpha = 0.1f))
+                    Icon(emptyIcon, contentDescription = null, modifier = Modifier.size(64.dp), tint = PushTVColors.TextPrimary.copy(alpha = 0.1f))
                     Spacer(modifier = Modifier.height(16.dp))
-                    Text(emptyText, color = Color.White.copy(alpha = 0.3f))
+                    Text(emptyText, color = PushTVColors.TextPrimary.copy(alpha = 0.3f))
                 }
             }
         } else {
@@ -281,17 +280,11 @@ fun SoftwareListScreen(
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 contentPadding = PaddingValues(bottom = 32.dp)
             ) {
-                items(activeTransfers, key = { "transfer:${it.id}" }, span = { androidx.compose.foundation.lazy.grid.GridItemSpan(2) }) { transfer ->
-                    TransferringItem(transfer)
-                }
-
-                itemsIndexed(apps, key = { _, app -> app.packageName }) { _, app ->
-                    val index = apps.indexOfFirst { it.packageName == app.packageName }
+                itemsIndexed(apps, key = { _, app -> app.packageName }) { index, app ->
                     val key = TvFocusKeys.app(app.packageName)
                     val fr = focusRequesterMap.getValue(key)
                     val leftRequester = if (index % 2 == 1) appKeys.getOrNull(index - 1)?.let(focusRequesterMap::get) else null
                     val rightRequester = if (index % 2 == 0) appKeys.getOrNull(index + 1)?.let(focusRequesterMap::get) else null
-                    val hasUpdate = viewModel.isVersionDifferent(app.versionName, app.remoteVersion)
 
                     SoftwareItem(
                         app = app,
@@ -310,7 +303,6 @@ fun SoftwareListScreen(
                                     lastFocusIndex = index
                                 }
                             }
-                            .then(if (hasUpdate) Modifier.border(2.dp, Color(0xFF10B981).copy(alpha = 0.5f), RoundedCornerShape(16.dp)) else Modifier)
                     )
                 }
             }
@@ -318,23 +310,32 @@ fun SoftwareListScreen(
     }
 
 }
-
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun SoftwareItem(app: InstalledApp, onClick: () -> Unit, softwareViewModel: SoftwareViewModel, modifier: Modifier = Modifier) {
     var isFocused by remember { mutableStateOf(false) }
+    val hasUpdate = softwareViewModel.isVersionDifferent(app.versionName, app.remoteVersion)
+
     Surface(
         onClick = onClick,
-        colors = ClickableSurfaceDefaults.colors(containerColor = Color.White.copy(alpha = 0.03f), focusedContainerColor = Color(0xFF243247)),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = PushTVColors.TextPrimary.copy(alpha = 0.03f),
+            focusedContainerColor = PushTVColors.SurfaceFocused
+        ),
         shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(16.dp)),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
         border = ClickableSurfaceDefaults.border(
-            focusedBorder = Border(BorderStroke(2.dp, Color.White), inset = (-1).dp)
+            border = if (hasUpdate) {
+                Border(BorderStroke(2.dp, PushTVColors.Success.copy(alpha = 0.5f)), inset = (-1).dp)
+            } else {
+                Border.None
+            },
+            focusedBorder = Border(BorderStroke(2.dp, PushTVColors.Primary), inset = (-1).dp)
         ),
         modifier = modifier.fillMaxWidth().onFocusChanged { isFocused = it.isFocused }
     ) {
         Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Box(modifier = Modifier.size(48.dp).clip(RoundedCornerShape(8.dp)).background(Color.White.copy(alpha = 0.05f)), contentAlignment = Alignment.Center) {
+            Box(modifier = Modifier.size(48.dp).clip(RoundedCornerShape(8.dp)).background(PushTVColors.TextPrimary.copy(alpha = 0.05f)), contentAlignment = Alignment.Center) {
                 AsyncImage(
                     model = app.icon,
                     contentDescription = null,
@@ -344,15 +345,15 @@ fun SoftwareItem(app: InstalledApp, onClick: () -> Unit, softwareViewModel: Soft
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(app.name, style = MaterialTheme.typography.titleMedium, color = Color.White, maxLines = 1, modifier = Modifier.weight(1f, fill = false))
+                    Text(app.name, style = MaterialTheme.typography.titleMedium, color = PushTVColors.TextPrimary, maxLines = 1, modifier = Modifier.weight(1f, fill = false))
                     val hasUpdate = softwareViewModel.isVersionDifferent(app.versionName, app.remoteVersion)
                     if (hasUpdate) {
                         Spacer(modifier = Modifier.width(8.dp))
-                        StatusTag("有新版本", Color(0xFF10B981))
+                        StatusTag("有新版本", PushTVColors.Success)
                     }
                     if (app.isFavorite) {
                         Spacer(modifier = Modifier.width(8.dp))
-                        Icon(Icons.Default.Favorite, contentDescription = null, tint = Color(0xFFF472B6), modifier = Modifier.size(14.dp))
+                        Icon(Icons.Default.Favorite, contentDescription = null, tint = PushTVColors.Favorite, modifier = Modifier.size(14.dp))
                     }
                 }
                 val versionText = StringBuilder("版本: ${app.versionName}")
@@ -361,9 +362,9 @@ fun SoftwareItem(app: InstalledApp, onClick: () -> Unit, softwareViewModel: Soft
                         versionText.append(" • $status")
                     }
                 }
-                Text(versionText.toString(), style = MaterialTheme.typography.bodySmall, color = if (app.remoteStatus?.contains("失败") == true) Color(0xFFEF4444) else Color(0xFF94A3B8))
+                Text(versionText.toString(), style = MaterialTheme.typography.bodySmall, color = if (app.remoteStatus?.contains("失败") == true) PushTVColors.Error else PushTVColors.TextSecondary)
             }
-            if (!isFocused) Text("管理", style = MaterialTheme.typography.bodySmall, color = Color(0xFF94A3B8).copy(alpha = 0.6f))
+            if (!isFocused) Text("管理", style = MaterialTheme.typography.bodySmall, color = PushTVColors.TextSecondary.copy(alpha = 0.6f))
         }
     }
 }
@@ -397,16 +398,16 @@ fun UrlEditDialog(app: InstalledApp, onDismiss: () -> Unit, onSave: (String) -> 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             shape = RoundedCornerShape(24.dp),
-            colors = NonInteractiveSurfaceDefaults.colors(containerColor = Color(0xFF1E293B)),
+            colors = NonInteractiveSurfaceDefaults.colors(containerColor = PushTVColors.Panel),
             modifier = Modifier
                 .width(500.dp)
                 .focusGroup()
                 .focusProperties { exit = { FocusRequester.Cancel } }
         ) {
             Column(modifier = Modifier.padding(32.dp)) {
-                Text("设置更新地址", style = MaterialTheme.typography.headlineSmall, color = Color.White)
+                Text("设置更新地址", style = MaterialTheme.typography.headlineSmall, color = PushTVColors.TextPrimary)
                 Spacer(modifier = Modifier.height(8.dp))
-                Text("输入 ${app.name} 的 GitHub 项目地址", style = MaterialTheme.typography.bodyMedium, color = Color(0xFF94A3B8))
+                Text("输入 ${app.name} 的 GitHub 项目地址", style = MaterialTheme.typography.bodyMedium, color = PushTVColors.TextSecondary)
                 Spacer(modifier = Modifier.height(24.dp))
                 OutlinedTextField(
                     value = url,
@@ -419,15 +420,15 @@ fun UrlEditDialog(app: InstalledApp, onDismiss: () -> Unit, onSave: (String) -> 
                             down = saveRequester
                         }
                         .onFocusChanged { inputFocused = it.isFocused },
-                    label = { Text("https://...", color = Color.White) },
+                    label = { Text("https://...", color = PushTVColors.TextPrimary) },
                     singleLine = true,
                     colors = TextFieldDefaults.colors(
-                        focusedContainerColor = Color.White.copy(alpha = 0.05f),
+                        focusedContainerColor = PushTVColors.TextPrimary.copy(alpha = 0.05f),
                         unfocusedContainerColor = Color.Transparent,
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedLabelColor = Color.White,
-                        unfocusedLabelColor = Color.White.copy(alpha = 0.7f)
+                        focusedTextColor = PushTVColors.TextPrimary,
+                        unfocusedTextColor = PushTVColors.TextPrimary,
+                        focusedLabelColor = PushTVColors.TextPrimary,
+                        unfocusedLabelColor = PushTVColors.TextPrimary.copy(alpha = 0.7f)
                     )
                 )
                 Spacer(modifier = Modifier.height(32.dp))
@@ -445,8 +446,8 @@ fun UrlEditDialog(app: InstalledApp, onDismiss: () -> Unit, onSave: (String) -> 
                                 down = FocusRequester.Cancel
                             },
                         colors = ButtonDefaults.colors(
-                            containerColor = Color.White.copy(alpha = 0.1f),
-                            focusedContainerColor = Color(0xFF38BDF8)
+                            containerColor = PushTVColors.TextPrimary.copy(alpha = 0.1f),
+                            focusedContainerColor = PushTVColors.Primary
                         )
                     ) { Text("保存") }
                     Button(
@@ -462,8 +463,8 @@ fun UrlEditDialog(app: InstalledApp, onDismiss: () -> Unit, onSave: (String) -> 
                                 down = FocusRequester.Cancel
                             },
                         colors = ButtonDefaults.colors(
-                            containerColor = Color.White.copy(alpha = 0.1f),
-                            focusedContainerColor = Color(0xFFEF4444)
+                            containerColor = PushTVColors.TextPrimary.copy(alpha = 0.1f),
+                            focusedContainerColor = PushTVColors.Error
                         )
                     ) { Text("取消") }
                 }

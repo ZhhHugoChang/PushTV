@@ -16,8 +16,16 @@ import io.ktor.client.statement.*
 import io.ktor.utils.io.*
 import io.ktor.utils.io.core.*
 import kotlinx.coroutines.*
+import kotlinx.coroutines.CancellationException as CoroutineCancellationException
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import java.io.File
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.util.concurrent.ConcurrentHashMap
+import java.util.zip.ZipFile
 
 data class GitHubAsset(
     val name: String,
@@ -46,6 +54,12 @@ enum class FilterMode {
 }
 
 class SoftwareViewModel(application: Application) : AndroidViewModel(application) {
+    private data class DownloadRequest(
+        val app: InstalledApp,
+        val url: String,
+        val isDirectAsset: Boolean
+    )
+
     private val context = application.applicationContext
     private val client = HttpClient(OkHttp) {
         install(HttpTimeout) {
@@ -56,6 +70,9 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
         // 自动跟随重定向
         followRedirects = true
     }
+    private val downloadJobs = ConcurrentHashMap<String, Job>()
+    private val downloadRequests = ConcurrentHashMap<String, DownloadRequest>()
+    private var loadAppsJob: Job? = null
 
     private val _installedApps = MutableStateFlow<List<InstalledApp>>(emptyList())
     val installedApps: StateFlow<List<InstalledApp>> = _installedApps
@@ -101,31 +118,45 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
 
     fun toggleFavorite(app: InstalledApp) {
         viewModelScope.launch {
-            SettingsRepo.setFavorite(context, app.packageName, !app.isFavorite)
-            loadInstalledApps()
+            val isFavorite = !app.isFavorite
+            SettingsRepo.setFavorite(context, app.packageName, isFavorite)
+            _installedApps.update { apps ->
+                apps.map { if (it.packageName == app.packageName) it.copy(isFavorite = isFavorite) else it }
+            }
         }
     }
 
     fun loadInstalledApps() {
-        viewModelScope.launch(Dispatchers.IO) {
+        loadAppsJob?.cancel()
+        loadAppsJob = viewModelScope.launch(Dispatchers.IO) {
             val pm = context.packageManager
             val apps = pm.getInstalledApplications(PackageManager.GET_META_DATA)
             val savedSettings = SettingsRepo.getAllSettings(context)
+            val previousApps = _installedApps.value.associateBy { it.packageName }
             
-            val appList = apps.distinctBy { it.packageName }.map { appInfo ->
-                val packageInfo = pm.getPackageInfo(appInfo.packageName, 0)
-                val settings = savedSettings[appInfo.packageName]
-                val isSystem = (appInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
+            val appList = apps.distinctBy { it.packageName }.mapNotNull { appInfo ->
+                runCatching {
+                    val packageInfo = pm.getPackageInfo(appInfo.packageName, 0)
+                    val settings = savedSettings[appInfo.packageName]
+                    val previous = previousApps[appInfo.packageName]
+                    val updateUrl = settings?.updateUrl.orEmpty()
+                    val keepsRemoteState = previous?.updateUrl == updateUrl
 
-                InstalledApp(
-                    name = pm.getApplicationLabel(appInfo).toString(),
-                    packageName = appInfo.packageName,
-                    icon = pm.getApplicationIcon(appInfo), // Pass Drawable directly to Coil
-                    versionName = packageInfo.versionName ?: "unknown",
-                    updateUrl = settings?.updateUrl.orEmpty(),
-                    isFavorite = settings?.isFavorite == true,
-                    isSystemApp = isSystem
-                )
+                    InstalledApp(
+                        name = pm.getApplicationLabel(appInfo).toString(),
+                        packageName = appInfo.packageName,
+                        icon = previous?.icon ?: pm.getApplicationIcon(appInfo),
+                        versionName = packageInfo.versionName ?: "unknown",
+                        updateUrl = updateUrl,
+                        remoteVersion = if (keepsRemoteState) previous?.remoteVersion else null,
+                        isChecking = keepsRemoteState && previous?.isChecking == true,
+                        remoteStatus = if (keepsRemoteState) previous?.remoteStatus else null,
+                        assets = if (keepsRemoteState) previous?.assets.orEmpty() else emptyList(),
+                        changelog = if (keepsRemoteState) previous?.changelog else null,
+                        isFavorite = settings?.isFavorite == true,
+                        isSystemApp = (appInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
+                    )
+                }.getOrNull()
             }.sortedBy { it.name }
             
             _installedApps.value = appList
@@ -134,8 +165,21 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
 
     fun saveUrl(packageName: String, url: String) {
         viewModelScope.launch {
-            SettingsRepo.saveUrl(context, packageName, url)
-            loadInstalledApps()
+            val normalizedUrl = url.trim()
+            SettingsRepo.saveUrl(context, packageName, normalizedUrl)
+            _installedApps.update { apps ->
+                apps.map {
+                    if (it.packageName == packageName) {
+                        it.copy(
+                            updateUrl = normalizedUrl,
+                            remoteVersion = null,
+                            remoteStatus = null,
+                            assets = emptyList(),
+                            changelog = null
+                        )
+                    } else it
+                }
+            }
         }
     }
 
@@ -159,15 +203,16 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
                 android.widget.Toast.makeText(context, "开始检测 $typeText 列表中的 ${appsToCheck.size} 个应用...", android.widget.Toast.LENGTH_SHORT).show()
             }
             
+            val requestLimit = Semaphore(4)
             val jobs = appsToCheck.map { app ->
                 async(Dispatchers.IO) {
-                    performCheckUpdate(app)
+                    requestLimit.withPermit { performCheckUpdate(app) }
                 }
             }
             jobs.awaitAll()
             
-            // 计算当前检测结果
-            val results = appsToCheck.mapNotNull { it.packageName.let { pkg -> _installedApps.value.find { a -> a.packageName == pkg } } }
+            val resultsByPackage = _installedApps.value.associateBy { it.packageName }
+            val results = appsToCheck.mapNotNull { resultsByPackage[it.packageName] }
             val updatedAppsCount = results.count { isVersionDifferent(it.versionName, it.remoteVersion) }
             val failedAppsCount = results.count { it.remoteStatus != "连接成功" }
             val incomparableAppsCount = results.count {
@@ -325,27 +370,71 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
             return
         }
 
+        val transferId = downloadTransferId(app.packageName)
+        val fileName = "${app.name}_update.apk"
+        if (!TransferManager.startTransfer(transferId, fileName)) {
+            android.widget.Toast.makeText(context, "${app.name} 正在下载", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+
         android.widget.Toast.makeText(context, "开始下载 ${app.name}", android.widget.Toast.LENGTH_SHORT).show()
-        
-        viewModelScope.launch(Dispatchers.IO) {
-            val transferId = "download:${app.packageName}:${System.nanoTime()}"
-            val fileName = "${app.name}_update.apk"
+        val request = DownloadRequest(app, urlToUse, specificUrl != null)
+        downloadRequests[transferId] = request
+        launchDownload(transferId, fileName, request)
+    }
+
+    fun cancelDownload(packageName: String) {
+        downloadJobs[downloadTransferId(packageName)]?.cancel()
+    }
+
+    fun cancelAllDownloads() {
+        downloadJobs.keys.toList().forEach { transferId ->
+            downloadJobs[transferId]?.cancel()
+            TransferManager.remove(transferId)
+        }
+        downloadRequests.clear()
+    }
+
+    fun retryDownload(packageName: String) {
+        val transferId = downloadTransferId(packageName)
+        val request = downloadRequests[transferId] ?: return
+        val fileName = "${request.app.name}_update.apk"
+        if (!TransferManager.startTransfer(transferId, fileName)) return
+        launchDownload(transferId, fileName, request)
+    }
+
+    private fun launchDownload(
+        transferId: String,
+        displayFileName: String,
+        request: DownloadRequest
+    ) {
+        val job = viewModelScope.launch(Dispatchers.IO) {
+            val downloadDir = File(context.cacheDir, "downloads").apply { mkdirs() }
+            val partFile = File(downloadDir, "${request.app.packageName}.apk.part")
+            val finalFile = File(downloadDir, "${request.app.packageName}-${System.currentTimeMillis()}.apk")
+            partFile.delete()
+
             try {
-                TransferManager.startTransfer(transferId, fileName)
-                
-                val finalUrl = if (specificUrl != null) specificUrl else resolveDownloadUrl(urlToUse)
+                TransferManager.markResolving(transferId)
+                val finalUrl = if (request.isDirectAsset) request.url else resolveDownloadUrl(request.url)
                 if (finalUrl.isBlank() || !finalUrl.startsWith("http")) {
                     throw Exception("无法解析下载地址: $finalUrl")
                 }
 
-                val destFile = File(context.cacheDir, "incoming/$fileName")
-                if (destFile.parentFile?.exists() == false) destFile.parentFile?.mkdirs()
-
                 val response: HttpResponse = client.get(finalUrl) {
+                    timeout {
+                        requestTimeoutMillis = DOWNLOAD_TIMEOUT_MILLIS
+                        socketTimeoutMillis = DOWNLOAD_SOCKET_TIMEOUT_MILLIS
+                    }
                     onDownload { bytesSentTotal, contentLength ->
                         if (contentLength > 0) {
                             val progress = ((bytesSentTotal.toDouble() / contentLength) * 100).toInt()
-                            TransferManager.updateProgress(transferId, fileName, progress)
+                            TransferManager.updateProgress(
+                                transferId,
+                                displayFileName,
+                                progress,
+                                contentLength
+                            )
                         }
                     }
                 }
@@ -353,8 +442,9 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
                     throw Exception("下载失败，HTTP ${response.status.value}")
                 }
 
+                TransferManager.markTransferring(transferId)
                 val channel: ByteReadChannel = response.bodyAsChannel()
-                destFile.outputStream().use { output ->
+                partFile.outputStream().buffered().use { output ->
                     while (!channel.isClosedForRead) {
                         val packet = channel.readRemaining(8192)
                         while (!packet.isEmpty) {
@@ -363,12 +453,42 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
                     }
                 }
 
+                if (!isValidApk(partFile)) throw Exception("下载内容不是有效的 APK")
+                moveCompletedDownload(partFile, finalFile)
+                triggerInstallation(finalFile)
                 TransferManager.markComplete(transferId)
-                triggerInstallation(destFile)
+            } catch (e: CoroutineCancellationException) {
+                partFile.delete()
+                finalFile.delete()
+                TransferManager.markCanceled(transferId)
+                throw e
             } catch (e: Exception) {
                 e.printStackTrace()
+                partFile.delete()
+                finalFile.delete()
                 TransferManager.markFailed(transferId, e.message ?: "下载失败")
             }
+        }
+        downloadJobs[transferId] = job
+        job.invokeOnCompletion { downloadJobs.remove(transferId, job) }
+    }
+
+    private fun downloadTransferId(packageName: String) = "download:$packageName"
+
+    private fun isValidApk(file: File): Boolean = runCatching {
+        file.length() > 0 && ZipFile(file).use { it.getEntry("AndroidManifest.xml") != null }
+    }.getOrDefault(false)
+
+    private fun moveCompletedDownload(source: File, destination: File) {
+        try {
+            Files.move(
+                source.toPath(),
+                destination.toPath(),
+                StandardCopyOption.ATOMIC_MOVE,
+                StandardCopyOption.REPLACE_EXISTING
+            )
+        } catch (_: AtomicMoveNotSupportedException) {
+            Files.move(source.toPath(), destination.toPath(), StandardCopyOption.REPLACE_EXISTING)
         }
     }
 
@@ -417,7 +537,13 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
     }
 
     override fun onCleared() {
+        downloadJobs.values.forEach { it.cancel() }
         client.close()
         super.onCleared()
+    }
+
+    companion object {
+        private const val DOWNLOAD_TIMEOUT_MILLIS = 10 * 60 * 1000L
+        private const val DOWNLOAD_SOCKET_TIMEOUT_MILLIS = 30_000L
     }
 }

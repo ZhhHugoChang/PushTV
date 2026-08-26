@@ -5,28 +5,34 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.darkColorScheme
 import androidx.compose.ui.graphics.Color
 
-val Background = Color(0xFF080A0F)
-val Surface = Color(0xFF11141B)
-val SurfaceElevated = Color(0xFF181C25)
-val Primary = Color(0xFF5B8CFF)
-val TextPrimary = Color(0xFFFFFFFF)
-val TextSecondary = Color(0xFFA7ACB8)
-val TextDisabled = Color(0xFF686D78)
-val Success = Color(0xFF35D07F)
-val Warning = Color(0xFFFFB84D)
-val Error = Color(0xFFFF5C67)
+object PushTVColors {
+    val Background = Color(0xFF080A0F)
+    val BackgroundTop = Color(0xFF111827)
+    val Surface = Color(0xFF0F172A)
+    val Panel = Color(0xFF1E293B)
+    val SurfaceFocused = Color(0xFF243247)
+    val Primary = Color(0xFF38BDF8)
+    val TextPrimary = Color(0xFFFFFFFF)
+    val TextSoft = Color(0xFFE2E8F0)
+    val TextSecondary = Color(0xFF94A3B8)
+    val TextMuted = Color(0xFF64748B)
+    val Success = Color(0xFF10B981)
+    val Warning = Color(0xFFF59E0B)
+    val Error = Color(0xFFEF4444)
+    val Favorite = Color(0xFFF472B6)
+}
 
 @OptIn(androidx.tv.material3.ExperimentalTvMaterial3Api::class)
 private val TVColorPalette = darkColorScheme(
-    background = Background,
-    surface = Surface,
-    surfaceVariant = SurfaceElevated,
-    primary = Primary,
-    onPrimary = TextPrimary,
-    onBackground = TextPrimary,
-    onSurface = TextPrimary,
-    onSurfaceVariant = TextSecondary,
-    error = Error
+    background = PushTVColors.Background,
+    surface = PushTVColors.Surface,
+    surfaceVariant = PushTVColors.Panel,
+    primary = PushTVColors.Primary,
+    onPrimary = PushTVColors.TextPrimary,
+    onBackground = PushTVColors.TextPrimary,
+    onSurface = PushTVColors.TextPrimary,
+    onSurfaceVariant = PushTVColors.TextSecondary,
+    error = PushTVColors.Error
 )
 
 @OptIn(androidx.tv.material3.ExperimentalTvMaterial3Api::class)

@@ -18,16 +18,16 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.pushtv.data.ReceivedFileHistoryRepo
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
-import com.example.pushtv.data.TransferManager
-import com.example.pushtv.data.TransferProgress
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
 import java.net.NetworkInterface
+import java.util.concurrent.ConcurrentHashMap
 
 data class ApkInfo(
     val file: File,
@@ -42,6 +42,12 @@ data class ApkInfo(
 )
 
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
+    private data class CachedApkInfo(
+        val size: Long,
+        val lastModified: Long,
+        val info: ApkInfo
+    )
+
     private val context = application.applicationContext
 
     private val _fileList = MutableStateFlow<List<ApkInfo>>(emptyList())
@@ -53,13 +59,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _qrBitmap = MutableStateFlow<ImageBitmap?>(null)
     val qrBitmap: StateFlow<ImageBitmap?> = _qrBitmap
 
-    val activeTransfers: StateFlow<List<TransferProgress>> = TransferManager.activeTransfers
-
     private val _storageInfo = MutableStateFlow("检测中...")
     val storageInfo: StateFlow<String> = _storageInfo
 
     private var fileObserver: FileObserver? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private var fileRefreshJob: Job? = null
+    private val apkInfoCache = ConcurrentHashMap<String, CachedApkInfo>()
 
     init {
         refreshIpAddress()
@@ -113,7 +119,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             val fullIp = if (ip == "未知IP") ip else "http://$ip:8899"
             _ipAddress.value = fullIp
             if (ip != "未知IP") {
-                _qrBitmap.value = generateQRCode(fullIp)
+                val installedAt = context.packageManager
+                    .getPackageInfo(context.packageName, 0)
+                    .lastUpdateTime
+                _qrBitmap.value = generateQRCode("$fullIp/?v=$installedAt")
             }
         }
     }
@@ -125,7 +134,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         fileObserver = object : FileObserver(incomingDir.absolutePath, CREATE or CLOSE_WRITE or MOVED_TO or DELETE) {
             override fun onEvent(event: Int, path: String?) {
                 if (path?.lowercase()?.endsWith(".apk") == true) {
-                    refreshFileList()
+                    scheduleFileListRefresh(FILE_REFRESH_DEBOUNCE_MILLIS)
                 }
             }
         }
@@ -133,15 +142,33 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun refreshFileList() {
-        viewModelScope.launch(Dispatchers.IO) {
+        scheduleFileListRefresh()
+    }
+
+    private fun scheduleFileListRefresh(delayMillis: Long = 0L) {
+        fileRefreshJob?.cancel()
+        fileRefreshJob = viewModelScope.launch(Dispatchers.IO) {
+            if (delayMillis > 0) delay(delayMillis)
             val dir = File(context.cacheDir, "incoming")
+            val hiddenFileNames = ReceivedFileHistoryRepo.getHiddenFileNames(context)
             val files = dir.listFiles { file -> file.extension.lowercase() == "apk" }
+                ?.filterNot { it.name in hiddenFileNames }
                 ?.sortedByDescending { it.lastModified() }
                 ?: emptyList()
 
             val apkInfos = files.map { file ->
-                parseApkInfo(context, file)
+                val path = file.absolutePath
+                val cached = apkInfoCache[path]
+                if (cached?.size == file.length() && cached.lastModified == file.lastModified()) {
+                    cached.info
+                } else {
+                    parseApkInfo(context, file).also { info ->
+                        apkInfoCache[path] = CachedApkInfo(file.length(), file.lastModified(), info)
+                    }
+                }
             }
+            val currentPaths = files.mapTo(HashSet()) { it.absolutePath }
+            apkInfoCache.keys.removeAll { it !in currentPaths }
             _fileList.value = apkInfos
         }
     }
@@ -158,19 +185,25 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearRecordsOnly() {
         viewModelScope.launch(Dispatchers.IO) {
-            val dir = File(context.cacheDir, "incoming")
-            dir.listFiles { file -> file.extension.lowercase() == "apk" }?.forEach { file ->
-                val newFile = File(dir, file.name + ".bak")
-                file.renameTo(newFile)
-            }
+            ReceivedFileHistoryRepo.hide(context, _fileList.value.map { it.file.name })
             refreshFileList()
+            withContext(Dispatchers.Main) {
+                android.widget.Toast.makeText(
+                    context,
+                    "接收历史已清空，安装包仍保留在设备中",
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
+            }
         }
     }
 
     fun clearAllFiles() {
         viewModelScope.launch(Dispatchers.IO) {
-            val dir = File(context.cacheDir, "incoming")
-            val allDeleted = dir.listFiles().orEmpty().all { it.deleteRecursively() }
+            val incomingDeleted = deleteDirectoryContents(File(context.cacheDir, "incoming"))
+            val downloadsDeleted = deleteDirectoryContents(File(context.cacheDir, "downloads"))
+            val allDeleted = incomingDeleted && downloadsDeleted
+            if (incomingDeleted) ReceivedFileHistoryRepo.clear(context)
+            apkInfoCache.clear()
             refreshFileList()
             refreshStorageInfo()
             withContext(Dispatchers.Main) {
@@ -182,6 +215,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show()
             }
         }
+    }
+
+    private fun deleteDirectoryContents(directory: File): Boolean {
+        return directory.listFiles().orEmpty()
+            .map { it.deleteRecursively() }
+            .all { it }
     }
 
     fun openApp(packageName: String) {
@@ -347,5 +386,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
             cm.unregisterNetworkCallback(it)
         }
+    }
+
+    companion object {
+        private const val FILE_REFRESH_DEBOUNCE_MILLIS = 250L
     }
 }

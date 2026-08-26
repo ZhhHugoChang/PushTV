@@ -11,7 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.tv.material3.Text
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import com.example.pushtv.ui.theme.PushTVTheme
-import com.example.pushtv.ui.theme.Background
+import com.example.pushtv.ui.theme.PushTVColors
 import com.example.pushtv.ui.home.HomeScreen
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -68,7 +68,7 @@ class MainActivity : ComponentActivity() {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(Background),
+                        .background(PushTVColors.Background),
                     contentAlignment = Alignment.Center
                 ) {
                     HomeScreen()
