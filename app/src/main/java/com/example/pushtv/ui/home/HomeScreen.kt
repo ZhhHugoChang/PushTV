@@ -51,6 +51,8 @@ import coil.compose.AsyncImage
 import com.example.pushtv.data.TransferManager
 import com.example.pushtv.data.TransferProgress
 import com.example.pushtv.data.TransferState
+import com.example.pushtv.data.BackupManager
+import com.example.pushtv.ui.backup.BackupScreen
 import com.example.pushtv.ui.software.FilterMode
 import com.example.pushtv.ui.software.InstalledApp
 import com.example.pushtv.ui.software.SoftwareViewModel
@@ -81,6 +83,7 @@ private data class ConfirmationRequest(
 
 internal object TvFocusKeys {
     const val HOME_SOFTWARE = "home:software"
+    const val HOME_BACKUP = "home:backup"
     const val HOME_CLEAR = "home:clear"
     const val SOFTWARE_ALL = "software:filter:all"
     const val SOFTWARE_FAVORITES = "software:filter:favorites"
@@ -92,6 +95,7 @@ internal object TvFocusKeys {
 
     val fixed = setOf(
         HOME_SOFTWARE,
+        HOME_BACKUP,
         HOME_CLEAR,
         SOFTWARE_ALL,
         SOFTWARE_FAVORITES,
@@ -196,11 +200,16 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel(), softwareViewModel: Softwa
         restoreFocusGeneration++
     }
 
-    BackHandler(enabled = focusLayer == FocusLayer.CONTENT || focusLayer == FocusLayer.DRAWER) {
+    LaunchedEffect(Unit) {
+        BackupManager.checkWebDavStatus(context)
+    }
+
+    BackHandler(enabled = currentScreen != 2 && (focusLayer == FocusLayer.CONTENT || focusLayer == FocusLayer.DRAWER)) {
         if (focusLayer == FocusLayer.DRAWER) {
             closeDrawerAndRestore()
         } else if (currentScreen != 0) {
             currentScreen = 0
+            restoreFocusGeneration++
         } else {
             val currentTime = System.currentTimeMillis()
             if (currentTime - lastBackTime < 2000) {
@@ -238,6 +247,7 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel(), softwareViewModel: Softwa
                     preferredFocusKey = lastHomeFocusKey,
                     onFocusKeyChanged = { lastHomeFocusKey = it },
                     onNavigateToSoftware = { currentScreen = 1 },
+                    onNavigateToBackup = { currentScreen = 2 },
                     onItemClick = { apk ->
                         drawerOriginKey = TvFocusKeys.file(apk.file.absolutePath)
                         drawerTitle = apk.name
@@ -305,7 +315,7 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel(), softwareViewModel: Softwa
                     },
                     focusRequesterMap = focusRequesterMap
                 )
-            } else {
+            } else if (currentScreen == 1) {
                 SoftwareListScreen(
                     isFocusActive = focusLayer == FocusLayer.CONTENT,
                     preferredFocusKey = lastSoftwareFocusKey,
@@ -342,6 +352,14 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel(), softwareViewModel: Softwa
                         focusLayer = FocusLayer.DRAWER
                     },
                     focusRequesterMap = focusRequesterMap
+                )
+            } else {
+                BackupScreen(
+                    onNavigateBack = {
+                        currentScreen = 0
+                        lastHomeFocusKey = TvFocusKeys.HOME_BACKUP
+                        restoreFocusGeneration++
+                    }
                 )
             }
         }

@@ -11,6 +11,10 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.example.pushtv.data.SettingsRepo
 import com.example.pushtv.data.TransferManager
+import com.example.pushtv.data.BackupManager
+import com.example.pushtv.data.BackupAppItem
+import com.example.pushtv.data.WebDavConfig
+import com.example.pushtv.network.WebDavClient
 import io.ktor.server.application.*
 import io.ktor.server.engine.*
 import io.ktor.server.netty.*
@@ -126,6 +130,109 @@ class NetworkService : Service() {
                                 HttpStatusCode.BadRequest
                             )
                         }
+                    }
+                    get("/api/webdav/config") {
+                        val config = SettingsRepo.getWebDavConfig(applicationContext)
+                        val status = BackupManager.webDavStatus.value.name
+                        val json = JSONObject().apply {
+                            put("serverUrl", config.serverUrl)
+                            put("username", config.username)
+                            put("password", if (config.password.isNotBlank()) "******" else "")
+                            put("remoteDir", config.remoteDir)
+                            put("status", status)
+                        }
+                        call.respondText(json.toString(), ContentType.Application.Json)
+                    }
+                    post("/api/webdav/config") {
+                        val params = call.receiveParameters()
+                        val url = params["serverUrl"]?.trim().orEmpty()
+                        val user = params["username"]?.trim().orEmpty()
+                        val pass = params["password"]?.trim().orEmpty()
+                        val dir = params["remoteDir"]?.trim()?.ifBlank { "/PushTV/Backups/" } ?: "/PushTV/Backups/"
+
+                        val oldConfig = SettingsRepo.getWebDavConfig(applicationContext)
+                        val finalPassword = if (pass == "******" || pass.isBlank()) oldConfig.password else pass
+
+                        val newConfig = WebDavConfig(
+                            serverUrl = url,
+                            username = user,
+                            password = finalPassword,
+                            remoteDir = dir
+                        )
+                        SettingsRepo.saveWebDavConfig(applicationContext, newConfig)
+                        BackupManager.checkWebDavStatus(applicationContext)
+
+                        launch(Dispatchers.Main) {
+                            android.widget.Toast.makeText(applicationContext, "WebDAV 配置已通过网页更新", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                        call.respondText("""{"success":true}""", ContentType.Application.Json)
+                    }
+                    post("/api/webdav/test") {
+                        val params = call.receiveParameters()
+                        val url = params["serverUrl"]?.trim().orEmpty()
+                        val user = params["username"]?.trim().orEmpty()
+                        val pass = params["password"]?.trim().orEmpty()
+                        val dir = params["remoteDir"]?.trim()?.ifBlank { "/PushTV/Backups/" } ?: "/PushTV/Backups/"
+
+                        val oldConfig = SettingsRepo.getWebDavConfig(applicationContext)
+                        val finalPassword = if (pass == "******" || pass.isBlank()) oldConfig.password else pass
+
+                        val testConfig = WebDavConfig(url, user, finalPassword, dir)
+                        val testResult = WebDavClient.testConnection(testConfig)
+                        val json = JSONObject().apply {
+                            put("success", testResult.isSuccess)
+                            put("message", if (testResult.isSuccess) "连接成功！目录正常" else testResult.exceptionOrNull()?.message ?: "连接失败")
+                        }
+                        call.respondText(json.toString(), ContentType.Application.Json)
+                    }
+                    post("/api/webdav/backup") {
+                        val params = call.receiveParameters()
+                        val packagesStr = params["packages"].orEmpty()
+                        val packages = packagesStr.split(",").map { it.trim() }.filter { it.isNotBlank() }
+
+                        if (packages.isEmpty()) {
+                            call.respondText("""{"success":false,"message":"未选择应用"}""", ContentType.Application.Json)
+                            return@post
+                        }
+
+                        val pm = applicationContext.packageManager
+                        val allApps = pm.getInstalledApplications(android.content.pm.PackageManager.GET_META_DATA)
+                        val selectedApps = allApps.filter { it.packageName in packages }
+                            .mapNotNull { appInfo ->
+                                try {
+                                    val pkgInfo = pm.getPackageInfo(appInfo.packageName, 0)
+                                    val sourceDir = appInfo.sourceDir
+                                    BackupAppItem(
+                                        name = pm.getApplicationLabel(appInfo).toString(),
+                                        packageName = appInfo.packageName,
+                                        icon = null,
+                                        versionName = pkgInfo.versionName.orEmpty(),
+                                        apkFileLength = File(sourceDir).length(),
+                                        sourceDir = sourceDir,
+                                        isSelected = true
+                                    )
+                                } catch (e: Exception) {
+                                    null
+                                }
+                            }
+
+                        BackupManager.startBackupQueue(applicationContext, selectedApps)
+                        call.respondText("""{"success":true,"count":${selectedApps.size}}""", ContentType.Application.Json)
+                    }
+                    get("/api/webdav/progress") {
+                        val progress = BackupManager.activeProgress.value
+                        val json = JSONObject().apply {
+                            put("active", progress != null)
+                            if (progress != null) {
+                                put("type", progress.type.name)
+                                put("appName", progress.currentAppName)
+                                put("index", progress.currentIndex)
+                                put("total", progress.totalCount)
+                                put("progress", progress.currentFileProgress)
+                                put("statusMessage", progress.statusMessage)
+                            }
+                        }
+                        call.respondText(json.toString(), ContentType.Application.Json)
                     }
                     post("/api/upload") {
                         var currentTransferId: String? = null

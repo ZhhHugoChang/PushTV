@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -58,9 +59,17 @@ fun SoftwareListScreen(
     focusRequesterMap: SnapshotStateMap<String, FocusRequester>
 ) {
     val apps by viewModel.filteredApps.collectAsState()
+    val installedApps by viewModel.installedApps.collectAsState()
     val filterMode by viewModel.filterMode.collectAsState()
     val hideSystemApps by viewModel.hideSystemApps.collectAsState()
     val favoriteUpdateCount by viewModel.favoriteUpdateCount.collectAsState()
+
+    val allCount = remember(installedApps, hideSystemApps) {
+        if (hideSystemApps) installedApps.count { !it.isSystemApp } else installedApps.size
+    }
+    val favoritesCount = remember(installedApps, hideSystemApps) {
+        if (hideSystemApps) installedApps.count { it.isFavorite && !it.isSystemApp } else installedApps.count { it.isFavorite }
+    }
     val allFilterRequester = focusRequesterMap.getOrPut(TvFocusKeys.SOFTWARE_ALL) { FocusRequester() }
     val favoritesFilterRequester = focusRequesterMap.getOrPut(TvFocusKeys.SOFTWARE_FAVORITES) { FocusRequester() }
     val hideSystemRequester = focusRequesterMap.getOrPut(TvFocusKeys.SOFTWARE_HIDE_SYSTEM) { FocusRequester() }
@@ -137,51 +146,97 @@ fun SoftwareListScreen(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            val title = when(filterMode) {
-                FilterMode.FAVORITES -> "我的收藏"
-                FilterMode.ALL -> "所有应用"
+            // 左侧：全部 / 收藏 双 Tab（样式完全对齐备份页本机/云端）
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                // 全部 Tab
+                Button(
+                    onClick = { viewModel.setFilterMode(FilterMode.ALL) },
+                    scale = ButtonDefaults.scale(focusedScale = 1f),
+                    colors = ButtonDefaults.colors(
+                        containerColor = if (filterMode == FilterMode.ALL) PushTVColors.Primary.copy(alpha = 0.2f) else PushTVColors.TextPrimary.copy(alpha = 0.05f),
+                        focusedContainerColor = PushTVColors.Primary
+                    ),
+                    shape = ButtonDefaults.shape(RoundedCornerShape(12.dp)),
+                    border = ButtonDefaults.border(
+                        border = if (filterMode == FilterMode.ALL) Border(BorderStroke(1.5.dp, PushTVColors.Primary)) else Border.None,
+                        focusedBorder = Border(BorderStroke(2.dp, PushTVColors.TextPrimary), inset = (-1).dp)
+                    ),
+                    modifier = Modifier
+                        .focusRequester(allFilterRequester)
+                        .then(enterListOnDown)
+                        .onFocusChanged { if (it.isFocused) onFocusKeyChanged(TvFocusKeys.SOFTWARE_ALL) }
+                        .focusProperties {
+                            left = FocusRequester.Cancel
+                            right = favoritesFilterRequester
+                        }
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Apps, contentDescription = null, tint = PushTVColors.TextPrimary, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            "全部 ($allCount)",
+                            color = PushTVColors.TextPrimary,
+                            fontWeight = if (filterMode == FilterMode.ALL) FontWeight.Bold else FontWeight.Normal
+                        )
+                    }
+                }
+
+                // 收藏 Tab
+                Button(
+                    onClick = { viewModel.setFilterMode(FilterMode.FAVORITES) },
+                    scale = ButtonDefaults.scale(focusedScale = 1f),
+                    colors = ButtonDefaults.colors(
+                        containerColor = if (filterMode == FilterMode.FAVORITES) PushTVColors.Primary.copy(alpha = 0.2f) else PushTVColors.TextPrimary.copy(alpha = 0.05f),
+                        focusedContainerColor = PushTVColors.Primary
+                    ),
+                    shape = ButtonDefaults.shape(RoundedCornerShape(12.dp)),
+                    border = ButtonDefaults.border(
+                        border = if (filterMode == FilterMode.FAVORITES) Border(BorderStroke(1.5.dp, PushTVColors.Primary)) else Border.None,
+                        focusedBorder = Border(BorderStroke(2.dp, PushTVColors.TextPrimary), inset = (-1).dp)
+                    ),
+                    modifier = Modifier
+                        .focusRequester(favoritesFilterRequester)
+                        .then(enterListOnDown)
+                        .onFocusChanged { if (it.isFocused) onFocusKeyChanged(TvFocusKeys.SOFTWARE_FAVORITES) }
+                        .focusProperties {
+                            left = allFilterRequester
+                            right = hideSystemRequester
+                        }
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Favorite, contentDescription = null, tint = PushTVColors.TextPrimary, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            "收藏 ($favoritesCount)",
+                            color = PushTVColors.TextPrimary,
+                            fontWeight = if (filterMode == FilterMode.FAVORITES) FontWeight.Bold else FontWeight.Normal
+                        )
+                        if (favoriteUpdateCount > 0) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Box(
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .background(PushTVColors.Success)
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = "$favoriteUpdateCount",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = PushTVColors.TextPrimary
+                                )
+                            }
+                        }
+                    }
+                }
             }
-            Text(title, style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold), color = PushTVColors.TextPrimary)
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Filter Tabs
-                Row(
-                    modifier = Modifier
-                        .background(PushTVColors.TextPrimary.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
-                        .padding(4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    FilterTab(
-                        label = "所有应用",
-                        mode = FilterMode.ALL,
-                        isSelected = filterMode == FilterMode.ALL,
-                        modifier = Modifier
-                            .focusRequester(allFilterRequester)
-                            .then(enterListOnDown)
-                            .focusProperties {
-                                left = FocusRequester.Cancel
-                                right = favoritesFilterRequester
-                            }
-                            .onFocusChanged { if (it.isFocused) onFocusKeyChanged(TvFocusKeys.SOFTWARE_ALL) }
-                    ) { viewModel.setFilterMode(it) }
-                    FilterTab(
-                        label = "我的收藏",
-                        mode = FilterMode.FAVORITES,
-                        isSelected = filterMode == FilterMode.FAVORITES,
-                        count = favoriteUpdateCount,
-                        modifier = Modifier
-                            .focusRequester(favoritesFilterRequester)
-                            .then(enterListOnDown)
-                            .focusProperties {
-                                left = allFilterRequester
-                                right = hideSystemRequester
-                            }
-                            .onFocusChanged { if (it.isFocused) onFocusKeyChanged(TvFocusKeys.SOFTWARE_FAVORITES) }
-                    ) { viewModel.setFilterMode(it) }
-                }
 
                 // Hide/Show System Apps Toggle
                 Button(

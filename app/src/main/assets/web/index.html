@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -78,6 +78,9 @@
             transition: 0.3s;
             color: #94a3b8;
             font-weight: 600;
+            white-space: nowrap;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
         }
         .tab.active { background: var(--primary); color: white; box-shadow: 0 0 20px rgba(56, 189, 248, 0.4); }
 
@@ -296,6 +299,163 @@
             }
         }
 
+        .webdav-card {
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+        .webdav-title {
+            font-size: 1.2rem;
+            font-weight: 700;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .webdav-badge {
+            font-size: 0.8rem;
+            padding: 4px 10px;
+            border-radius: 20px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-weight: 600;
+        }
+        .badge-online { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+        .badge-offline { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+        .badge-unconfigured { background: rgba(148, 163, 184, 0.2); color: #94a3b8; }
+        .badge-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+        .badge-online .badge-dot { background: #34d399; }
+        .badge-offline .badge-dot { background: #f87171; }
+        .badge-unconfigured .badge-dot { background: #94a3b8; }
+        .form-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+        @media (max-width: 600px) {
+            .form-grid { grid-template-columns: 1fr; }
+        }
+        .form-group label {
+            display: block;
+            font-size: 0.8rem;
+            color: #94a3b8;
+            margin-bottom: 6px;
+            font-weight: 500;
+        }
+        .form-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+            margin-top: 8px;
+        }
+        .btn {
+            padding: 10px 20px;
+            border-radius: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            border: none;
+            transition: 0.2s;
+            font-size: 0.9rem;
+        }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-primary:hover { background: #0284c7; }
+        .btn-secondary { background: rgba(255,255,255,0.08); color: #f1f5f9; }
+        .btn-secondary:hover { background: rgba(255,255,255,0.15); }
+        .backup-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .app-item-select {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            cursor: pointer;
+        }
+        .app-item-select input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+            accent-color: var(--primary);
+        }
+
+        @media (max-width: 640px) {
+            .container {
+                width: 92%;
+                padding: 20px 0;
+            }
+            header {
+                margin-bottom: 20px;
+            }
+            h1 {
+                font-size: 2.4rem;
+                letter-spacing: -1px;
+            }
+            .tabs-container {
+                margin-bottom: 20px;
+                width: 100%;
+            }
+            .tabs {
+                display: flex;
+                width: 100%;
+                box-sizing: border-box;
+                padding: 4px;
+                gap: 4px;
+                border-radius: 12px;
+            }
+            .tab {
+                flex: 1 1 0;
+                min-width: 0;
+                padding: 10px 4px;
+                border-radius: 9px;
+                font-size: 0.88rem;
+                text-align: center;
+                white-space: nowrap;
+            }
+            .search-container {
+                flex-direction: column;
+                align-items: stretch;
+                padding: 8px;
+                gap: 8px;
+            }
+            .search-input {
+                padding: 8px 6px;
+                width: 100%;
+                box-sizing: border-box;
+            }
+            .toggle-btn {
+                justify-content: center;
+                width: 100%;
+                box-sizing: border-box;
+                padding: 8px 14px;
+                font-size: 0.85rem;
+            }
+            .app-grid {
+                grid-template-columns: 1fr;
+            }
+            .form-grid {
+                grid-template-columns: 1fr;
+            }
+            .form-actions {
+                flex-direction: column;
+            }
+            .form-actions .btn {
+                width: 100%;
+                text-align: center;
+            }
+            .backup-bar {
+                flex-direction: column;
+                gap: 12px;
+                align-items: stretch;
+            }
+            .backup-bar .btn {
+                width: 100%;
+                text-align: center;
+            }
+        }
+
         footer { margin-top: 50px; padding: 40px; color: #475569; font-size: 0.8rem; letter-spacing: 1px; }
     </style>
 </head>
@@ -310,6 +470,7 @@
             <div class="tabs">
                 <div class="tab active" onclick="showSection('upload', this)">文件传输</div>
                 <div class="tab" onclick="showSection('apps', this)">更新管理</div>
+                <div class="tab" onclick="showSection('webdav', this)">WebDAV</div>
             </div>
         </div>
 
@@ -331,6 +492,57 @@
                 <!-- 动态加载 -->
             </div>
         </div>
+
+        <div id="webdav-section" class="section">
+            <div class="webdav-card app-card">
+                <div class="webdav-title">
+                    <span>WebDAV 账户配置</span>
+                    <span id="webdavStatusBadge" class="webdav-badge badge-unconfigured">
+                        <span class="badge-dot"></span> <span id="webdavStatusText">检测中...</span>
+                    </span>
+                </div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>WebDAV 服务器地址</label>
+                        <input type="text" id="wdServerUrl" class="url-input" placeholder="https://dav.jianguoyun.com/dav/">
+                    </div>
+                    <div class="form-group">
+                        <label>远端备份存储目录</label>
+                        <input type="text" id="wdRemoteDir" class="url-input" value="/PushTV/Backups/">
+                    </div>
+                    <div class="form-group">
+                        <label>用户名 / 账号</label>
+                        <input type="text" id="wdUsername" class="url-input" placeholder="username">
+                    </div>
+                    <div class="form-group">
+                        <label>密码 / 应用授权码</label>
+                        <input type="password" id="wdPassword" class="url-input" placeholder="留空保持原密码不变">
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button class="btn btn-secondary" onclick="testWebDavConnection()">测试连接</button>
+                    <button class="btn btn-primary" onclick="saveWebDavConfig()">保存配置</button>
+                </div>
+            </div>
+
+            <div id="webdavProgressBanner" style="display: none; margin-bottom: 20px;" class="app-card">
+                <div style="padding: 16px; display: flex; justify-content: space-between; align-items: center;">
+                    <div style="font-weight: 600;" id="wdProgressMsg">正在备份...</div>
+                    <div style="color: var(--primary); font-weight: 700;" id="wdProgressPct">0%</div>
+                </div>
+            </div>
+
+            <div class="backup-bar">
+                <div style="font-weight: 700; font-size: 1.1rem;">可备份第三方应用</div>
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn btn-secondary" onclick="toggleSelectAllWdApps()">全选 / 取消全选</button>
+                    <button class="btn btn-primary" id="btnWdBackup" onclick="triggerWebDavBackup()">备份所选到云端</button>
+                </div>
+            </div>
+            <div class="app-grid" id="wdAppGrid">
+                <!-- 动态加载 -->
+            </div>
+        </div>
     </div>
 
     <footer>PushTV - 专注电视端极速体验</footer>
@@ -342,6 +554,7 @@
             document.getElementById(id + '-section').classList.add('active');
             clickedTab.classList.add('active');
             if(id === 'apps') loadApps();
+            if(id === 'webdav') loadWebDavSection();
         }
 
         // 文件上传逻辑 (保持原样并增强)
@@ -543,6 +756,191 @@
             } catch (_) {
                 alert('同步失败，请检查连接');
             }
+        }
+
+        // WebDAV 逻辑
+        let wdApps = [];
+        let wdPollInterval = null;
+
+        async function loadWebDavSection() {
+            try {
+                const res = await fetch('/api/webdav/config');
+                const cfg = await res.json();
+                document.getElementById('wdServerUrl').value = cfg.serverUrl || '';
+                document.getElementById('wdUsername').value = cfg.username || '';
+                document.getElementById('wdPassword').value = cfg.password || '';
+                document.getElementById('wdRemoteDir').value = cfg.remoteDir || '/PushTV/Backups/';
+                updateWebDavBadge(cfg.status);
+            } catch (e) {
+                console.error(e);
+            }
+            loadWebDavApps();
+            checkWebDavProgress();
+        }
+
+        function updateWebDavBadge(status) {
+            const badge = document.getElementById('webdavStatusBadge');
+            const text = document.getElementById('webdavStatusText');
+            badge.className = 'webdav-badge';
+            if (status === 'ONLINE') {
+                badge.classList.add('badge-online');
+                text.innerText = '在线';
+            } else if (status === 'OFFLINE') {
+                badge.classList.add('badge-offline');
+                text.innerText = '离线 / 错误';
+            } else {
+                badge.classList.add('badge-unconfigured');
+                text.innerText = '未配置';
+            }
+        }
+
+        async function testWebDavConnection() {
+            const url = document.getElementById('wdServerUrl').value;
+            const user = document.getElementById('wdUsername').value;
+            const pass = document.getElementById('wdPassword').value;
+            const dir = document.getElementById('wdRemoteDir').value;
+
+            const fd = new URLSearchParams();
+            fd.append('serverUrl', url);
+            fd.append('username', user);
+            fd.append('password', pass);
+            fd.append('remoteDir', dir);
+
+            const text = document.getElementById('webdavStatusText');
+            text.innerText = '测试中...';
+
+            try {
+                const res = await fetch('/api/webdav/test', { method: 'POST', body: fd });
+                const data = await res.json();
+                if (data.success) {
+                    alert('连接成功！' + data.message);
+                    updateWebDavBadge('ONLINE');
+                } else {
+                    alert('连接失败：' + data.message);
+                    updateWebDavBadge('OFFLINE');
+                }
+            } catch (e) {
+                alert('请求异常，请检查网络');
+                updateWebDavBadge('OFFLINE');
+            }
+        }
+
+        async function saveWebDavConfig() {
+            const url = document.getElementById('wdServerUrl').value;
+            const user = document.getElementById('wdUsername').value;
+            const pass = document.getElementById('wdPassword').value;
+            const dir = document.getElementById('wdRemoteDir').value;
+
+            const fd = new URLSearchParams();
+            fd.append('serverUrl', url);
+            fd.append('username', user);
+            fd.append('password', pass);
+            fd.append('remoteDir', dir);
+
+            try {
+                const res = await fetch('/api/webdav/config', { method: 'POST', body: fd });
+                const data = await res.json();
+                if (data.success) {
+                    alert('WebDAV 配置已保存！电视端已即时同步。');
+                    loadWebDavSection();
+                } else {
+                    alert('保存失败');
+                }
+            } catch (e) {
+                alert('保存异常');
+            }
+        }
+
+        async function loadWebDavApps() {
+            const grid = document.getElementById('wdAppGrid');
+            try {
+                const res = await fetch('/api/apps');
+                const apps = await res.json();
+                wdApps = apps.filter(app => !app.isSystem);
+                renderWebDavApps(wdApps);
+            } catch (e) {
+                grid.innerHTML = '<div style="grid-column: 1/-1; text-align:center">无法读取应用列表</div>';
+            }
+        }
+
+        function renderWebDavApps(apps) {
+            const grid = document.getElementById('wdAppGrid');
+            grid.innerHTML = '';
+            if (apps.length === 0) {
+                grid.innerHTML = '<div style="grid-column: 1/-1; text-align:center; color: #64748B;">没有可备份的第三方应用</div>';
+                return;
+            }
+            apps.forEach(app => {
+                const card = document.createElement('div');
+                card.className = 'app-card';
+                card.innerHTML = `
+                    <div class="app-item-select">
+                        <input type="checkbox" id="chk-${app.packageName}" value="${app.packageName}">
+                        <div>
+                            <div class="app-name">${app.name}</div>
+                            <div class="app-pkg">${app.packageName} (${app.version})</div>
+                        </div>
+                    </div>
+                `;
+                card.onclick = (e) => {
+                    if (e.target.tagName !== 'INPUT') {
+                        const chk = card.querySelector('input[type="checkbox"]');
+                        chk.checked = !chk.checked;
+                    }
+                };
+                grid.appendChild(card);
+            });
+        }
+
+        function toggleSelectAllWdApps() {
+            const checkboxes = document.querySelectorAll('#wdAppGrid input[type="checkbox"]');
+            const hasUnchecked = Array.from(checkboxes).some(c => !c.checked);
+            checkboxes.forEach(c => c.checked = hasUnchecked);
+        }
+
+        async function triggerWebDavBackup() {
+            const checked = Array.from(document.querySelectorAll('#wdAppGrid input[type="checkbox"]:checked')).map(c => c.value);
+            if (checked.length === 0) {
+                alert('请先勾选需要备份的应用');
+                return;
+            }
+
+            const fd = new URLSearchParams();
+            fd.append('packages', checked.join(','));
+
+            try {
+                const res = await fetch('/api/webdav/backup', { method: 'POST', body: fd });
+                const data = await res.json();
+                if (data.success) {
+                    alert(`备份任务已在电视后台启动（已加入队列：${data.count} 个应用）`);
+                    pollWebDavProgress();
+                } else {
+                    alert('启动备份失败：' + (data.message || '未知错误'));
+                }
+            } catch (e) {
+                alert('网络请求失败');
+            }
+        }
+
+        function checkWebDavProgress() {
+            if (wdPollInterval) clearInterval(wdPollInterval);
+            pollWebDavProgress();
+            wdPollInterval = setInterval(pollWebDavProgress, 2000);
+        }
+
+        async function pollWebDavProgress() {
+            try {
+                const res = await fetch('/api/webdav/progress');
+                const data = await res.json();
+                const banner = document.getElementById('webdavProgressBanner');
+                if (data.active) {
+                    banner.style.display = 'block';
+                    document.getElementById('wdProgressMsg').innerText = data.statusMessage || '正在传输...';
+                    document.getElementById('wdProgressPct').innerText = Math.round((data.progress || 0) * 100) + '%';
+                } else {
+                    banner.style.display = 'none';
+                }
+            } catch (e) {}
         }
     </script>
 </body>

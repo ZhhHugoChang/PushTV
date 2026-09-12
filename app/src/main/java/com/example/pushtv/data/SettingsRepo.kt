@@ -18,6 +18,11 @@ object SettingsRepo {
     private const val URL_PREFIX = "url_"
     private const val FAVORITE_PREFIX = "fav_"
 
+    private val KEY_WEBDAV_URL = stringPreferencesKey("webdav_server_url")
+    private val KEY_WEBDAV_USERNAME = stringPreferencesKey("webdav_username")
+    private val KEY_WEBDAV_PASSWORD = stringPreferencesKey("webdav_password")
+    private val KEY_WEBDAV_REMOTE_DIR = stringPreferencesKey("webdav_remote_dir")
+
     private fun getUrlKey(packageName: String) = stringPreferencesKey("$URL_PREFIX$packageName")
     private fun getFavKey(packageName: String) = booleanPreferencesKey("$FAVORITE_PREFIX$packageName")
 
@@ -30,6 +35,25 @@ object SettingsRepo {
     suspend fun setFavorite(context: Context, packageName: String, isFavorite: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[getFavKey(packageName)] = isFavorite
+        }
+    }
+
+    suspend fun getWebDavConfig(context: Context): WebDavConfig {
+        val prefs = context.dataStore.data.first()
+        return WebDavConfig(
+            serverUrl = prefs[KEY_WEBDAV_URL].orEmpty(),
+            username = prefs[KEY_WEBDAV_USERNAME].orEmpty(),
+            password = prefs[KEY_WEBDAV_PASSWORD].orEmpty(),
+            remoteDir = prefs[KEY_WEBDAV_REMOTE_DIR] ?: "/PushTV/Backups/"
+        )
+    }
+
+    suspend fun saveWebDavConfig(context: Context, config: WebDavConfig) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_WEBDAV_URL] = config.serverUrl
+            preferences[KEY_WEBDAV_USERNAME] = config.username
+            preferences[KEY_WEBDAV_PASSWORD] = config.password
+            preferences[KEY_WEBDAV_REMOTE_DIR] = config.remoteDir
         }
     }
 
