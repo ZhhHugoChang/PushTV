@@ -60,8 +60,11 @@ fun WebDavConfigDialog(
     val keyboardController = LocalSoftwareKeyboardController.current
 
     LaunchedEffect(Unit) {
-        withFrameNanos { }
-        saveBtnRequester.requestFocus()
+        // CRASH-01: Dialog 入场动画可能多帧才完成，用重试保护
+        repeat(5) {
+            withFrameNanos { }
+            if (runCatching { saveBtnRequester.requestFocus(); true }.getOrDefault(false)) return@LaunchedEffect
+        }
     }
 
     BackHandler {

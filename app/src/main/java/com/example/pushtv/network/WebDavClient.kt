@@ -221,7 +221,7 @@ object WebDavClient {
                             sink.write(buffer, 0, read)
                             uploaded += read
                             if (coroutineContext.isActive) {
-                                onProgress(uploaded, totalSize)
+                                runCatching { onProgress(uploaded, totalSize) } // CRASH-08: 保护进度回调异常
                             }
                         }
                     }

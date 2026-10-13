@@ -43,7 +43,7 @@ object BackupManager {
     private val managerScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var workerJob: Job? = null
     private val taskQueue = ConcurrentLinkedQueue<QueueTask>()
-    private val pendingSingleInstalls = mutableListOf<File>()
+    private val pendingSingleInstalls = java.util.concurrent.CopyOnWriteArrayList<File>()
 
     private val _webDavStatus = MutableStateFlow(WebDavStatus.UNCONFIGURED)
     val webDavStatus: StateFlow<WebDavStatus> = _webDavStatus.asStateFlow()
@@ -175,6 +175,7 @@ object BackupManager {
             }
 
             workerJob = managerScope.launch {
+                var lastTaskType = BackupTaskType.UPLOAD
                 try {
                     val config = SettingsRepo.getWebDavConfig(context)
                     if (!config.isConfigured) {
@@ -187,6 +188,7 @@ object BackupManager {
 
                     while (isActive && !taskQueue.isEmpty()) {
                         val task = taskQueue.poll() ?: break
+                        lastTaskType = task.type
                         val remainingCount = taskQueue.size
                         val queueText = if (remainingCount > 0) " (队列剩余 $remainingCount 项)" else ""
 
@@ -228,6 +230,8 @@ object BackupManager {
                                 val incomingDir = File(context.cacheDir, "incoming")
                                 if (!incomingDir.exists()) incomingDir.mkdirs()
 
+                                // 使用 .part 临时文件写入，避免 cleanIncomingCache() 竞争删除 (CRASH-11)
+                                val partFile = File(incomingDir, ".${task.remoteFileName}.part")
                                 val destFile = File(incomingDir, task.remoteFileName)
 
                                 _activeProgress.value = BackupProgress(
@@ -254,6 +258,7 @@ object BackupManager {
                                     )
                                 }
 
+                                partFile.delete() // 清理残留 .part 文件
                                 if (downloadResult.isSuccess) {
                                     if (task.isSingleAppRestore) {
                                         pendingSingleInstalls.add(destFile)
@@ -279,7 +284,7 @@ object BackupManager {
                 } finally {
                     _activeProgress.value = null
                     if (isActive) {
-                        _taskCompletedEvent.tryEmit(BackupTaskType.UPLOAD)
+                        _taskCompletedEvent.tryEmit(lastTaskType) // CRASH-07: 发出实际任务类型
                         if (pendingSingleInstalls.isNotEmpty()) {
                             val files = pendingSingleInstalls.toList()
                             pendingSingleInstalls.clear()
@@ -292,6 +297,7 @@ object BackupManager {
             }
         }
     }
+
 
     fun cancelCurrentTask() {
         taskQueue.clear()

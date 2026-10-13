@@ -184,7 +184,7 @@ fun BackupScreen(
     val enterDownFromTopBar = Modifier.onPreviewKeyEvent { event ->
         if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionDown) {
             if (activeProgress != null) {
-                cancelTaskRequester.requestFocus()
+                runCatching { cancelTaskRequester.requestFocus() } // CRASH-03: 节点可能尚未附着
                 true
             } else {
                 enterCurrentAppList()
@@ -275,7 +275,7 @@ fun BackupScreen(
                 cloudApks.firstOrNull()?.let { "backup:cloud:${it.fileName}" }
             }
             val requester = firstKey?.let { focusRequesterMap[it] } ?: localTabRequester
-            requester.requestFocus()
+            runCatching { requester.requestFocus() } // CRASH-02: 保护初始焦点请求
         }
     }
 
@@ -1710,8 +1710,11 @@ private fun DuplicateBackupDialog(
     val cancelRequester = remember { FocusRequester() }
 
     LaunchedEffect(Unit) {
-        withFrameNanos { }
-        skipRequester.requestFocus()
+        // CRASH-01: Dialog 入场动画可能多帧才完成，用重试保护
+        repeat(5) {
+            withFrameNanos { }
+            if (runCatching { skipRequester.requestFocus(); true }.getOrDefault(false)) return@LaunchedEffect
+        }
     }
 
     BackHandler(onBack = onDismiss)
@@ -1863,8 +1866,11 @@ private fun InstallPromptDialog(
     val cancelRequester = remember { FocusRequester() }
 
     LaunchedEffect(Unit) {
-        withFrameNanos { }
-        installRequester.requestFocus()
+        // CRASH-01: Dialog 入场动画可能多帧才完成，用重试保护
+        repeat(5) {
+            withFrameNanos { }
+            if (runCatching { installRequester.requestFocus(); true }.getOrDefault(false)) return@LaunchedEffect
+        }
     }
 
     BackHandler(onBack = onDismiss)
@@ -1985,8 +1991,11 @@ private fun DeleteCloudConfirmDialog(
     val cancelRequester = remember { FocusRequester() }
 
     LaunchedEffect(Unit) {
-        withFrameNanos { }
-        cancelRequester.requestFocus()
+        // CRASH-01: Dialog 入场动画可能多帧才完成，用重试保护
+        repeat(5) {
+            withFrameNanos { }
+            if (runCatching { cancelRequester.requestFocus(); true }.getOrDefault(false)) return@LaunchedEffect
+        }
     }
 
     BackHandler(onBack = onDismiss)
@@ -2099,11 +2108,11 @@ private fun InsufficientStorageDialog(
     val dismissRequester = remember { FocusRequester() }
 
     LaunchedEffect(Unit) {
-        withFrameNanos { }
-        if (warning.cacheBytes > 0L) {
-            cleanRequester.requestFocus()
-        } else {
-            dismissRequester.requestFocus()
+        // CRASH-01: Dialog 入场动画可能多帧才完成，用重试保护
+        val target = if (warning.cacheBytes > 0L) cleanRequester else dismissRequester
+        repeat(5) {
+            withFrameNanos { }
+            if (runCatching { target.requestFocus(); true }.getOrDefault(false)) return@LaunchedEffect
         }
     }
 

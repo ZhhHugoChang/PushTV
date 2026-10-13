@@ -287,7 +287,10 @@ class BackupViewModel(application: Application) : AndroidViewModel(application) 
         val incomingDir = File(context.cacheDir, "incoming")
         var freed = 0L
         if (incomingDir.exists()) {
-            val files = incomingDir.listFiles { f -> f.isFile && f.extension.equals("apk", ignoreCase = true) }
+            // 跳过 .part 临时文件（正在下载中），避免竞争删除 (CRASH-11)
+            val files = incomingDir.listFiles { f ->
+                f.isFile && f.extension.equals("apk", ignoreCase = true) && !f.name.startsWith(".")
+            }
             files?.forEach { file ->
                 val len = file.length()
                 if (file.delete()) freed += len

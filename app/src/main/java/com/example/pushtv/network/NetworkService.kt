@@ -96,16 +96,19 @@ class NetworkService : Service() {
                         val pm = applicationContext.packageManager
                         val apps = pm.getInstalledApplications(android.content.pm.PackageManager.GET_META_DATA)
                         val savedSettings = SettingsRepo.getAllSettings(applicationContext)
-                        val appList = apps.map { appInfo ->
-                            val packageInfo = pm.getPackageInfo(appInfo.packageName, 0)
-                            val isSystem = (appInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
-                            JSONObject().apply {
-                                put("name", pm.getApplicationLabel(appInfo).toString())
-                                put("packageName", appInfo.packageName)
-                                put("version", packageInfo.versionName.orEmpty())
-                                put("url", savedSettings[appInfo.packageName]?.updateUrl.orEmpty())
-                                put("isSystem", isSystem)
-                            }
+                        // CRASH-10: 逐项捕获异常，防止枚举过程中应用被卸载导致崩溃
+                        val appList = apps.mapNotNull { appInfo ->
+                            runCatching {
+                                val packageInfo = pm.getPackageInfo(appInfo.packageName, 0)
+                                val isSystem = (appInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
+                                JSONObject().apply {
+                                    put("name", pm.getApplicationLabel(appInfo).toString())
+                                    put("packageName", appInfo.packageName)
+                                    put("version", packageInfo.versionName.orEmpty())
+                                    put("url", savedSettings[appInfo.packageName]?.updateUrl.orEmpty())
+                                    put("isSystem", isSystem)
+                                }
+                            }.getOrNull()
                         }
                         call.respondText(JSONArray(appList).toString(), ContentType.Application.Json)
                     }

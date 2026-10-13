@@ -73,8 +73,11 @@ fun ConfirmDialog(title: String, message: String, onConfirm: () -> Unit, onDismi
     val cancelRequester = remember { FocusRequester() }
 
     LaunchedEffect(Unit) {
-        withFrameNanos { }
-        cancelRequester.requestFocus()
+        // CRASH-01: Dialog 入场动画可能多帧才完成，用重试保护
+        repeat(5) {
+            withFrameNanos { }
+            if (runCatching { cancelRequester.requestFocus(); true }.getOrDefault(false)) return@LaunchedEffect
+        }
     }
 
     BackHandler(onBack = onDismiss)
