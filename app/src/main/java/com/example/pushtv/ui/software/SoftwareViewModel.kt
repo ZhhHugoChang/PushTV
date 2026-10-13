@@ -1,4 +1,4 @@
-﻿package com.example.pushtv.ui.software
+package com.example.pushtv.ui.software
 
 import android.app.Application
 import android.content.pm.PackageManager
@@ -42,7 +42,7 @@ data class InstalledApp(
     val updateUrl: String = "",
     val remoteVersion: String? = null,
     val isChecking: Boolean = false,
-    val remoteStatus: String? = null, // 鏂板锛氳繛鎺ョ姸鎬佹弿杩?
+    val remoteStatus: String? = null, // 新增：连接状态描述
     val assets: List<GitHubAsset> = emptyList(),
     val changelog: String? = null,
     val isFavorite: Boolean = false,
@@ -67,7 +67,7 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
             connectTimeoutMillis = 10000
             socketTimeoutMillis = 15000
         }
-        // 鑷姩璺熼殢閲嶅畾鍚?
+        // 自动跟随重定向
         followRedirects = true
     }
     private val downloadJobs = ConcurrentHashMap<String, Job>()
@@ -192,15 +192,15 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
         
         if (appsToCheck.isEmpty()) {
             if (mode == FilterMode.FAVORITES) {
-                android.widget.Toast.makeText(context, "鏀惰棌鍒楄〃涓病鏈夐厤缃洿鏂板湴鍧€鐨勫簲鐢?, android.widget.Toast.LENGTH_SHORT).show()
+                android.widget.Toast.makeText(context, "收藏列表中没有配置更新地址的应用", android.widget.Toast.LENGTH_SHORT).show()
             }
             return
         }
 
         viewModelScope.launch {
             withContext(Dispatchers.Main) {
-                val typeText = if (mode == FilterMode.FAVORITES) "鏀惰棌" else "鍏ㄩ儴"
-                android.widget.Toast.makeText(context, "寮€濮嬫娴?$typeText 鍒楄〃涓殑 ${appsToCheck.size} 涓簲鐢?..", android.widget.Toast.LENGTH_SHORT).show()
+                val typeText = if (mode == FilterMode.FAVORITES) "收藏" else "全部"
+                android.widget.Toast.makeText(context, "开始检测 $typeText 列表中的 ${appsToCheck.size} 个应用...", android.widget.Toast.LENGTH_SHORT).show()
             }
             
             val requestLimit = Semaphore(4)
@@ -214,24 +214,24 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
             val resultsByPackage = _installedApps.value.associateBy { it.packageName }
             val results = appsToCheck.mapNotNull { resultsByPackage[it.packageName] }
             val updatedAppsCount = results.count { isVersionDifferent(it.versionName, it.remoteVersion) }
-            val failedAppsCount = results.count { it.remoteStatus != "杩炴帴鎴愬姛" }
+            val failedAppsCount = results.count { it.remoteStatus != "连接成功" }
             val incomparableAppsCount = results.count {
-                it.remoteStatus == "杩炴帴鎴愬姛" && !canCompareVersions(it.versionName, it.remoteVersion)
+                it.remoteStatus == "连接成功" && !canCompareVersions(it.versionName, it.remoteVersion)
             }
             
             withContext(Dispatchers.Main) {
                 when {
                     updatedAppsCount > 0 -> {
-                        android.widget.Toast.makeText(context, "妫€娴嬪畬鎴愶細鍙戠幇 $updatedAppsCount 涓簲鐢ㄦ湁鏂扮増鏈?, android.widget.Toast.LENGTH_LONG).show()
+                        android.widget.Toast.makeText(context, "检测完成：发现 $updatedAppsCount 个应用有新版本", android.widget.Toast.LENGTH_LONG).show()
                     }
                     failedAppsCount > 0 -> {
-                        android.widget.Toast.makeText(context, "妫€娴嬪畬鎴愶細$failedAppsCount 涓簲鐢ㄨ繛鎺ュけ璐ワ紝璇锋鏌ョ綉缁?, android.widget.Toast.LENGTH_LONG).show()
+                        android.widget.Toast.makeText(context, "检测完成：$failedAppsCount 个应用连接失败，请检查网络", android.widget.Toast.LENGTH_LONG).show()
                     }
                     incomparableAppsCount > 0 -> {
-                        android.widget.Toast.makeText(context, "妫€娴嬪畬鎴愶細$incomparableAppsCount 涓簲鐢ㄧ殑鐗堟湰鏍煎紡鏃犳硶姣旇緝", android.widget.Toast.LENGTH_LONG).show()
+                        android.widget.Toast.makeText(context, "检测完成：$incomparableAppsCount 个应用的版本格式无法比较", android.widget.Toast.LENGTH_LONG).show()
                     }
                     else -> {
-                        android.widget.Toast.makeText(context, "妫€娴嬪畬鎴愶細鍒楄〃涓殑搴旂敤鍧囦负鏈€鏂?, android.widget.Toast.LENGTH_SHORT).show()
+                        android.widget.Toast.makeText(context, "检测完成：列表中的应用均为最新", android.widget.Toast.LENGTH_SHORT).show()
                     }
                 }
             }
@@ -246,21 +246,21 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
     }
 
     private suspend fun performCheckUpdate(app: InstalledApp) {
-        updateAppStatus(app.packageName, isChecking = true, remoteStatus = "姝ｅ湪杩炴帴...")
+        updateAppStatus(app.packageName, isChecking = true, remoteStatus = "正在连接...")
         try {
             val info = parseGitHubUrl(app.updateUrl)
             if (info != null) {
                 val (owner, repo) = info
-                // 灏濊瘯鑾峰彇鏈€鏂版寮忕増
+                // 尝试获取最新正式版
                 val apiUrl = "https://api.github.com/repos/$owner/$repo/releases/latest"
                 val response = client.get(apiUrl) {
-                    // 浣跨敤鏍囧噯鐨勬祻瑙堝櫒 Header
+                    // 使用标准的浏览器 Header
                     header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
                     header("Accept", "application/vnd.github+json")
                 }
                 
                 if (response.status.value in 200..299) {
-                    // ... (淇濇寔鐜版湁鐨勮В鏋愰€昏緫)
+                    // ... (保持现有的解析逻辑)
                     val bodyStr = response.bodyAsText()
                     val releaseObj = org.json.JSONObject(bodyStr)
                     val latestVersion = releaseObj.optString("tag_name").takeIf { it.isNotBlank() }
@@ -284,25 +284,25 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
                         }
                     }
 
-                    updateAppStatus(app.packageName, remoteVersion = latestVersion, isChecking = false, assets = assets, changelog = changelog, remoteStatus = "杩炴帴鎴愬姛")
+                    updateAppStatus(app.packageName, remoteVersion = latestVersion, isChecking = false, assets = assets, changelog = changelog, remoteStatus = "连接成功")
                     return
                 } else if (response.status.value == 403) {
-                    updateAppStatus(app.packageName, isChecking = false, remoteStatus = "琚檺鍒?(API Rate Limit)")
+                    updateAppStatus(app.packageName, isChecking = false, remoteStatus = "被限制 (API Rate Limit)")
                     return
                 } else if (response.status.value == 404) {
-                    updateAppStatus(app.packageName, remoteVersion = "鏈彂甯冪増鏈?, isChecking = false, remoteStatus = "鏈壘鍒扮増鏈?)
+                    updateAppStatus(app.packageName, remoteVersion = "未发布版本", isChecking = false, remoteStatus = "未找到版本")
                     return
                 } else {
-                    updateAppStatus(app.packageName, isChecking = false, remoteStatus = "鏈嶅姟鍣ㄩ敊璇?(${response.status.value})")
+                    updateAppStatus(app.packageName, isChecking = false, remoteStatus = "服务器错误 (${response.status.value})")
                     return
                 }
             }
-            updateAppStatus(app.packageName, isChecking = false, remoteStatus = "鍦板潃瑙ｆ瀽澶辫触")
+            updateAppStatus(app.packageName, isChecking = false, remoteStatus = "地址解析失败")
         } catch (e: Exception) {
             e.printStackTrace()
-            // 鎻愬彇绠€鐭殑绯荤粺鎶ラ敊淇℃伅
+            // 提取简短的系统报错信息
             val errorMsg = e.message?.take(30) ?: e.javaClass.simpleName
-            updateAppStatus(app.packageName, isChecking = false, remoteStatus = "澶辫触: $errorMsg")
+            updateAppStatus(app.packageName, isChecking = false, remoteStatus = "失败: $errorMsg")
         }
     }
 
@@ -310,10 +310,10 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
         val abis = android.os.Build.SUPPORTED_ABIS
         val name = fileName.lowercase()
         
-        // 1. 浼樺厛瀹屽叏鍖归厤
+        // 1. 优先完全匹配
         if (abis.any { name.contains(it.lowercase()) }) return true
         
-        // 2. 甯歌鍒悕鍖归厤
+        // 2. 常见别名匹配
         return when {
             abis.contains("arm64-v8a") && (name.contains("arm64") || name.contains("aarch64") || name.contains("v8a")) -> true
             abis.contains("armeabi-v7a") && (name.contains("v7a") || name.contains("armv7") || name.contains("armeabi")) -> true
@@ -366,18 +366,18 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
     fun downloadAndInstall(app: InstalledApp, specificUrl: String? = null) {
         val urlToUse = specificUrl ?: app.updateUrl
         if (urlToUse.isBlank()) {
-            android.widget.Toast.makeText(context, "娌℃湁鍙敤鐨勪笅杞藉湴鍧€", android.widget.Toast.LENGTH_SHORT).show()
+            android.widget.Toast.makeText(context, "没有可用的下载地址", android.widget.Toast.LENGTH_SHORT).show()
             return
         }
 
         val transferId = downloadTransferId(app.packageName)
         val fileName = "${app.name}_update.apk"
         if (!TransferManager.startTransfer(transferId, fileName)) {
-            android.widget.Toast.makeText(context, "${app.name} 姝ｅ湪涓嬭浇", android.widget.Toast.LENGTH_SHORT).show()
+            android.widget.Toast.makeText(context, "${app.name} 正在下载", android.widget.Toast.LENGTH_SHORT).show()
             return
         }
 
-        android.widget.Toast.makeText(context, "寮€濮嬩笅杞?${app.name}", android.widget.Toast.LENGTH_SHORT).show()
+        android.widget.Toast.makeText(context, "开始下载 ${app.name}", android.widget.Toast.LENGTH_SHORT).show()
         val request = DownloadRequest(app, urlToUse, specificUrl != null)
         downloadRequests[transferId] = request
         launchDownload(transferId, fileName, request)
@@ -418,7 +418,7 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
                 TransferManager.markResolving(transferId)
                 val finalUrl = if (request.isDirectAsset) request.url else resolveDownloadUrl(request.url)
                 if (finalUrl.isBlank() || !finalUrl.startsWith("http")) {
-                    throw Exception("鏃犳硶瑙ｆ瀽涓嬭浇鍦板潃: $finalUrl")
+                    throw Exception("无法解析下载地址: $finalUrl")
                 }
 
                 val response: HttpResponse = client.get(finalUrl) {
@@ -439,7 +439,7 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
                     }
                 }
                 if (response.status.value !in 200..299) {
-                    throw Exception("涓嬭浇澶辫触锛孒TTP ${response.status.value}")
+                    throw Exception("下载失败，HTTP ${response.status.value}")
                 }
 
                 TransferManager.markTransferring(transferId)
@@ -453,7 +453,7 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
                     }
                 }
 
-                if (!isValidApk(partFile)) throw Exception("涓嬭浇鍐呭涓嶆槸鏈夋晥鐨?APK")
+                if (!isValidApk(partFile)) throw Exception("下载内容不是有效的 APK")
                 moveCompletedDownload(partFile, finalFile)
                 triggerInstallation(finalFile)
                 TransferManager.markComplete(transferId)
@@ -466,7 +466,7 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
                 e.printStackTrace()
                 partFile.delete()
                 finalFile.delete()
-                TransferManager.markFailed(transferId, e.message ?: "涓嬭浇澶辫触")
+                TransferManager.markFailed(transferId, e.message ?: "下载失败")
             }
         }
         downloadJobs[transferId] = job
@@ -495,7 +495,7 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
     private suspend fun resolveDownloadUrl(inputUrl: String): String {
         val trimmedUrl = inputUrl.trim().removeSuffix("/")
         
-        // 濡傛灉宸茬粡鏄?APK 鐩撮摼锛岀洿鎺ヨ繑鍥?
+        // 如果已经是 APK 直链，直接返回
         if (trimmedUrl.endsWith(".apk", ignoreCase = true)) return trimmedUrl
         
         val info = parseGitHubUrl(trimmedUrl) ?: return trimmedUrl
@@ -507,14 +507,15 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
             val response = client.get(apiUrl) {
                 header("User-Agent", "PushTV-App")
                 header("Accept", "application/vnd.github+json")
-                timeout { // CRASH-12: add explicit timeout matching checkUpdate
+                timeout {
                     requestTimeoutMillis = 15000
                     socketTimeoutMillis = 15000
                 }
             }
             if (response.status.value in 200..299) {
                 val body = response.bodyAsText()
-                val regex = Regex("""\\"browser_download_url\\":\\s*\\"([^\\"]+?\\.apk)\\"$""")
+                // 使用正则查找第一个以 .apk 结尾的下载链接
+                val regex = Regex("\"browser_download_url\":\\s*\"([^\"]+?\\.apk)\"")
                 val match = regex.find(body)
                 match?.groupValues?.get(1) ?: trimmedUrl
             } else {
@@ -527,8 +528,8 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
     }
 
     private suspend fun triggerInstallation(file: File) {
-        withContext(Dispatchers.Main) { // CRASH-04: must call startActivity on main thread
-            try { // CRASH-05: catch FileProvider / ActivityNotFoundException
+        withContext(Dispatchers.Main) {
+            try {
                 val intent = android.content.Intent(android.content.Intent.ACTION_VIEW)
                 val uri = androidx.core.content.FileProvider.getUriForFile(
                     context,
