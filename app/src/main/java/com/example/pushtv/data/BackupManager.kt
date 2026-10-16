@@ -42,6 +42,7 @@ object BackupManager {
 
     private val managerScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var workerJob: Job? = null
+    private var statusCheckJob: Job? = null
     private val taskQueue = ConcurrentLinkedQueue<QueueTask>()
     private val pendingSingleInstalls = java.util.concurrent.CopyOnWriteArrayList<File>()
 
@@ -60,8 +61,10 @@ object BackupManager {
     private val _singleInstallPromptEvent = MutableSharedFlow<List<File>>(extraBufferCapacity = 1)
     val singleInstallPromptEvent: SharedFlow<List<File>> = _singleInstallPromptEvent.asSharedFlow()
 
+    @Synchronized
     fun checkWebDavStatus(context: Context) {
-        managerScope.launch {
+        statusCheckJob?.cancel()
+        statusCheckJob = managerScope.launch {
             val config = SettingsRepo.getWebDavConfig(context)
             if (!config.isConfigured) {
                 _webDavStatus.value = WebDavStatus.UNCONFIGURED
@@ -176,6 +179,8 @@ object BackupManager {
 
             workerJob = managerScope.launch {
                 var lastTaskType = BackupTaskType.UPLOAD
+                var uploadDirectoryChecked = false
+                var uploadDirectoryError: Throwable? = null
                 try {
                     val config = SettingsRepo.getWebDavConfig(context)
                     if (!config.isConfigured) {
@@ -197,6 +202,15 @@ object BackupManager {
                                 val sourceDir = task.localSourceDir ?: continue
                                 val localFile = File(sourceDir)
                                 if (!localFile.exists()) continue
+
+                                if (!uploadDirectoryChecked) {
+                                    uploadDirectoryChecked = true
+                                    uploadDirectoryError = WebDavClient.ensureRemoteDirectory(config).exceptionOrNull()
+                                }
+                                uploadDirectoryError?.let { error ->
+                                    _lastError.value = "准备 WebDAV 目录失败: ${error.message}"
+                                    continue
+                                }
 
                                 _activeProgress.value = BackupProgress(
                                     type = BackupTaskType.UPLOAD,

@@ -15,13 +15,11 @@
             --bg-end: #0f172a;
             --card-bg: rgba(30, 41, 59, 0.5);
             --border: rgba(255, 255, 255, 0.08);
-            --glow-blue: linear-gradient(135deg, #38bdf8 0%, #1e293b 40%);
-            --glow-purple: linear-gradient(135deg, #818cf8 0%, #1e293b 40%);
         }
 
         body {
             font-family: 'Inter', -apple-system, sans-serif;
-            background: radial-gradient(circle at top, #1e293b 0%, #020617 100%);
+            background: #020617;
             color: #f8fafc;
             margin: 0;
             padding: 0;
@@ -29,20 +27,6 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-        }
-
-        /* 模拟星空效果 */
-        body::before {
-            content: "";
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-image: radial-gradient(white, rgba(255,255,255,0.2) 2px, transparent 40px);
-            background-size: 100px 100px;
-            opacity: 0.05;
-            z-index: -1;
         }
 
         .container {
@@ -57,9 +41,7 @@
             font-weight: 900;
             margin: 0;
             letter-spacing: -2px;
-            background: linear-gradient(to bottom, #ffffff 0%, #94a3b8 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
+            color: #f8fafc;
         }
         .subtitle { color: #64748b; margin-top: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: 2px; font-size: 0.8rem; }
 
@@ -138,21 +120,6 @@
             color: white;
             background: rgba(56, 189, 248, 0.2);
             box-shadow: 0 0 15px rgba(56, 189, 248, 0.2);
-        }
-
-        /* 边框发光特效 */
-        .app-card::after {
-            content: "";
-            position: absolute;
-            top: 0; left: 0; right: 0; bottom: 0;
-            border-radius: 20px;
-            padding: 1.5px;
-            background: linear-gradient(135deg, rgba(56,189,248,0.3) 0%, transparent 40%, transparent 60%, rgba(129,140,248,0.1) 100%);
-            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-            mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-            -webkit-mask-composite: xor;
-            mask-composite: exclude;
-            pointer-events: none;
         }
 
         .drop-zone {
@@ -247,7 +214,7 @@
 
         .progress-bar {
             height: 100%;
-            background: linear-gradient(90deg, var(--primary), var(--success));
+            background: var(--primary);
             width: 0%;
             transition: 0.3s;
             border-radius: 3px;
@@ -287,6 +254,45 @@
         }
         .save-btn:hover { background: var(--primary); color: white; }
 
+        .github-token-card {
+            padding: 22px;
+            margin-bottom: 20px;
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+        }
+        .github-token-title {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 8px;
+            color: #f8fafc;
+            font-size: 1.05rem;
+            font-weight: 700;
+        }
+        .github-token-status {
+            flex: none;
+            color: #94a3b8;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+        .github-token-status.configured { color: #34d399; }
+        .github-token-help {
+            margin: 0 0 16px;
+            color: #94a3b8;
+            font-size: 0.88rem;
+            line-height: 1.6;
+        }
+        .github-token-row {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto auto;
+            gap: 10px;
+            align-items: center;
+        }
+        .github-token-row .url-input { margin-bottom: 0; }
+        .github-token-row .btn { height: 42px; }
+
         @media (max-width: 480px) {
             .search-container { gap: 6px; }
             .search-input {
@@ -296,6 +302,12 @@
             .toggle-btn {
                 padding: 9px 12px;
                 font-size: 0.82rem;
+            }
+            .github-token-row {
+                grid-template-columns: 1fr;
+            }
+            .github-token-row .btn {
+                width: 100%;
             }
         }
 
@@ -484,6 +496,20 @@
         </div>
 
         <div id="apps-section" class="section">
+            <div class="github-token-card">
+                <div class="github-token-title">
+                    <span>GitHub Token</span>
+                    <span id="githubTokenStatus" class="github-token-status">检测中...</span>
+                </div>
+                <p class="github-token-help">
+                    Token 用于提高 GitHub 更新检测的请求额度。Token 会加密保存在电视本机，网页不会读取或显示已保存的内容；建议使用无额外权限并设置有效期的 Token。
+                </p>
+                <div class="github-token-row">
+                    <input type="password" id="githubTokenInput" class="url-input" autocomplete="off" placeholder="ghp_... / github_pat_...">
+                    <button class="btn btn-primary" onclick="saveGitHubToken()">保存 Token</button>
+                    <button id="clearGitHubTokenButton" class="btn btn-secondary" onclick="clearGitHubToken()">清除</button>
+                </div>
+            </div>
             <div class="search-container">
                 <input type="text" id="appSearch" class="search-input" placeholder="搜索应用名称或包名..." oninput="filterApps()">
                 <button id="systemToggle" class="toggle-btn active" onclick="toggleSystemApps()">隐藏系统应用</button>
@@ -553,7 +579,10 @@
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.getElementById(id + '-section').classList.add('active');
             clickedTab.classList.add('active');
-            if(id === 'apps') loadApps();
+            if(id === 'apps') {
+                loadApps();
+                loadGitHubTokenConfig();
+            }
             if(id === 'webdav') loadWebDavSection();
         }
 
@@ -682,6 +711,61 @@
         // 应用管理逻辑
         let allApps = [];
         let hideSystem = true;
+
+        async function loadGitHubTokenConfig() {
+            const status = document.getElementById('githubTokenStatus');
+            try {
+                const res = await fetch('/api/github/token');
+                const data = await res.json();
+                status.innerText = data.configured ? '已配置' : '未配置';
+                status.classList.toggle('configured', data.configured === true);
+                document.getElementById('githubTokenInput').placeholder = data.configured
+                    ? '已配置，输入新 Token 可替换'
+                    : 'ghp_... / github_pat_...';
+                document.getElementById('clearGitHubTokenButton').disabled = !data.configured;
+            } catch (_) {
+                status.innerText = '状态读取失败';
+                status.classList.remove('configured');
+            }
+        }
+
+        async function saveGitHubToken() {
+            const input = document.getElementById('githubTokenInput');
+            const token = input.value.trim();
+            if (!token) {
+                alert('请输入 GitHub Token');
+                input.focus();
+                return;
+            }
+            const fd = new URLSearchParams();
+            fd.append('token', token);
+            try {
+                const res = await fetch('/api/github/token', { method: 'POST', body: fd });
+                const data = await res.json();
+                if (!res.ok || data.success !== true) throw new Error(data.message || '保存失败');
+                input.value = '';
+                await loadGitHubTokenConfig();
+                alert('GitHub Token 已保存，电视端已同步。');
+            } catch (e) {
+                alert(e.message || 'GitHub Token 保存失败');
+            }
+        }
+
+        async function clearGitHubToken() {
+            if (!confirm('确定清除电视上保存的 GitHub Token？')) return;
+            const fd = new URLSearchParams();
+            fd.append('clear', 'true');
+            try {
+                const res = await fetch('/api/github/token', { method: 'POST', body: fd });
+                const data = await res.json();
+                if (!res.ok || data.success !== true) throw new Error(data.message || '清除失败');
+                document.getElementById('githubTokenInput').value = '';
+                await loadGitHubTokenConfig();
+                alert('GitHub Token 已清除。');
+            } catch (e) {
+                alert(e.message || 'GitHub Token 清除失败');
+            }
+        }
 
         async function loadApps() {
             const grid = document.getElementById('appGrid');

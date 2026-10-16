@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.core.content.FileProvider
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.*
 import coil.compose.AsyncImage
@@ -188,7 +189,7 @@ fun HomeContent(
                     Icon(Icons.Default.Apps, contentDescription = "软件列表", tint = PushTVColors.TextPrimary)
                 }
 
-                val mobileWebDavStatus by BackupManager.webDavStatus.collectAsState()
+                val mobileWebDavStatus by BackupManager.webDavStatus.collectAsStateWithLifecycle()
                 val mobileDotColor = when (mobileWebDavStatus) {
                     WebDavStatus.ONLINE -> PushTVColors.Success
                     WebDavStatus.OFFLINE -> PushTVColors.Error
@@ -425,7 +426,7 @@ fun FileListSection(
                 }
 
                 // 备份按钮
-                val webDavStatus by BackupManager.webDavStatus.collectAsState()
+                val webDavStatus by BackupManager.webDavStatus.collectAsStateWithLifecycle()
                 val dotColor = when (webDavStatus) {
                     WebDavStatus.ONLINE -> PushTVColors.Success
                     WebDavStatus.OFFLINE -> PushTVColors.Error

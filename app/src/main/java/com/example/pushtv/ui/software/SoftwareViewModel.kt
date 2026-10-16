@@ -6,6 +6,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.pushtv.data.SettingsRepo
 import com.example.pushtv.data.TransferManager
+import com.example.pushtv.network.ProgressUpdateLimiter
 import com.example.pushtv.utils.Events
 import com.example.pushtv.utils.VersionComparator
 import io.ktor.client.*
@@ -14,11 +15,12 @@ import io.ktor.client.plugins.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.utils.io.*
-import io.ktor.utils.io.core.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.CancellationException as CoroutineCancellationException
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import java.io.File
 import java.nio.file.AtomicMoveNotSupportedException
@@ -37,7 +39,6 @@ data class GitHubAsset(
 data class InstalledApp(
     val name: String,
     val packageName: String,
-    val icon: Any?,
     val versionName: String,
     val updateUrl: String = "",
     val remoteVersion: String? = null,
@@ -61,21 +62,37 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
     )
 
     private val context = application.applicationContext
-    private val client = HttpClient(OkHttp) {
-        install(HttpTimeout) {
-            requestTimeoutMillis = 15000
-            connectTimeoutMillis = 10000
-            socketTimeoutMillis = 15000
+    private val clientDelegate = lazy {
+        HttpClient(OkHttp) {
+            install(HttpTimeout) {
+                requestTimeoutMillis = 15000
+                connectTimeoutMillis = 10000
+                socketTimeoutMillis = 15000
+            }
+            // 自动跟随重定向
+            followRedirects = true
         }
-        // 自动跟随重定向
-        followRedirects = true
     }
+    private val client by clientDelegate
     private val downloadJobs = ConcurrentHashMap<String, Job>()
     private val downloadRequests = ConcurrentHashMap<String, DownloadRequest>()
+    private val appIconCache = ConcurrentHashMap<String, Any>()
     private var loadAppsJob: Job? = null
+    private val githubTokenMutex = Mutex()
+    @Volatile
+    private var githubTokenLoaded = false
+    private var githubTokenCache = ""
+    @Volatile
+    private var hasLoadedApps = false
 
     private val _installedApps = MutableStateFlow<List<InstalledApp>>(emptyList())
     val installedApps: StateFlow<List<InstalledApp>> = _installedApps
+
+    private val _isLoadingApps = MutableStateFlow(false)
+    val isLoadingApps: StateFlow<Boolean> = _isLoadingApps.asStateFlow()
+
+    private val _hasGitHubToken = MutableStateFlow(false)
+    val hasGitHubToken: StateFlow<Boolean> = _hasGitHubToken.asStateFlow()
 
     private val _filterMode = MutableStateFlow(FilterMode.FAVORITES)
     val filterMode: StateFlow<FilterMode> = _filterMode
@@ -100,10 +117,61 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
     }.stateIn(viewModelScope, SharingStarted.Lazily, 0)
 
     init {
-        loadInstalledApps()
         viewModelScope.launch {
             Events.refreshAppsSignal.collect {
-                loadInstalledApps()
+                if (hasLoadedApps) loadInstalledApps()
+            }
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            Events.githubTokenChangedSignal.collect { reloadGitHubToken() }
+        }
+    }
+
+    fun ensureAppsLoaded() {
+        if (!hasLoadedApps && loadAppsJob?.isActive != true) loadInstalledApps()
+        viewModelScope.launch(Dispatchers.IO) { getGitHubToken() }
+    }
+
+    fun saveGitHubToken(token: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val normalized = token.trim()
+            SettingsRepo.saveGitHubToken(context, normalized)
+            githubTokenMutex.withLock {
+                githubTokenCache = normalized
+                githubTokenLoaded = true
+            }
+            _hasGitHubToken.value = normalized.isNotEmpty()
+            withContext(Dispatchers.Main) {
+                val message = if (normalized.isEmpty()) "GitHub Token 已清除" else "GitHub Token 已保存"
+                android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private suspend fun getGitHubToken(): String {
+        if (!githubTokenLoaded) {
+            reloadGitHubToken()
+        }
+        return githubTokenCache
+    }
+
+    private suspend fun reloadGitHubToken() {
+        githubTokenMutex.withLock {
+            githubTokenCache = SettingsRepo.getGitHubToken(context)
+            githubTokenLoaded = true
+            _hasGitHubToken.value = githubTokenCache.isNotEmpty()
+        }
+    }
+
+    fun getCachedAppIcon(packageName: String): Any? = appIconCache[packageName]
+
+    suspend fun loadAppIcon(packageName: String): Any? {
+        appIconCache[packageName]?.let { return it }
+        return withContext(Dispatchers.IO) {
+            appIconCache[packageName] ?: runCatching {
+                context.packageManager.getApplicationIcon(packageName)
+            }.getOrNull()?.let { icon ->
+                appIconCache.putIfAbsent(packageName, icon) ?: icon
             }
         }
     }
@@ -129,37 +197,44 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
     fun loadInstalledApps() {
         loadAppsJob?.cancel()
         loadAppsJob = viewModelScope.launch(Dispatchers.IO) {
-            val pm = context.packageManager
-            val apps = pm.getInstalledApplications(PackageManager.GET_META_DATA)
-            val savedSettings = SettingsRepo.getAllSettings(context)
-            val previousApps = _installedApps.value.associateBy { it.packageName }
-            
-            val appList = apps.distinctBy { it.packageName }.mapNotNull { appInfo ->
-                runCatching {
-                    val packageInfo = pm.getPackageInfo(appInfo.packageName, 0)
-                    val settings = savedSettings[appInfo.packageName]
-                    val previous = previousApps[appInfo.packageName]
-                    val updateUrl = settings?.updateUrl.orEmpty()
-                    val keepsRemoteState = previous?.updateUrl == updateUrl
+            _isLoadingApps.value = true
+            try {
+                val pm = context.packageManager
+                val apps = pm.getInstalledApplications(PackageManager.GET_META_DATA)
+                val savedSettings = SettingsRepo.getAllSettings(context)
+                val previousApps = _installedApps.value.associateBy { it.packageName }
 
-                    InstalledApp(
-                        name = pm.getApplicationLabel(appInfo).toString(),
-                        packageName = appInfo.packageName,
-                        icon = previous?.icon ?: pm.getApplicationIcon(appInfo),
-                        versionName = packageInfo.versionName ?: "unknown",
-                        updateUrl = updateUrl,
-                        remoteVersion = if (keepsRemoteState) previous?.remoteVersion else null,
-                        isChecking = keepsRemoteState && previous?.isChecking == true,
-                        remoteStatus = if (keepsRemoteState) previous?.remoteStatus else null,
-                        assets = if (keepsRemoteState) previous?.assets.orEmpty() else emptyList(),
-                        changelog = if (keepsRemoteState) previous?.changelog else null,
-                        isFavorite = settings?.isFavorite == true,
-                        isSystemApp = (appInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
-                    )
-                }.getOrNull()
-            }.sortedBy { it.name }
-            
-            _installedApps.value = appList
+                val appList = apps.distinctBy { it.packageName }.mapNotNull { appInfo ->
+                    runCatching {
+                        val packageInfo = pm.getPackageInfo(appInfo.packageName, 0)
+                        val settings = savedSettings[appInfo.packageName]
+                        val previous = previousApps[appInfo.packageName]
+                        val updateUrl = settings?.updateUrl.orEmpty()
+                        val keepsRemoteState = previous?.updateUrl == updateUrl
+
+                        InstalledApp(
+                            name = pm.getApplicationLabel(appInfo).toString(),
+                            packageName = appInfo.packageName,
+                            versionName = packageInfo.versionName ?: "unknown",
+                            updateUrl = updateUrl,
+                            remoteVersion = if (keepsRemoteState) previous.remoteVersion else null,
+                            isChecking = keepsRemoteState && previous.isChecking,
+                            remoteStatus = if (keepsRemoteState) previous.remoteStatus else null,
+                            assets = if (keepsRemoteState) previous.assets else emptyList(),
+                            changelog = if (keepsRemoteState) previous.changelog else null,
+                            isFavorite = settings?.isFavorite == true,
+                            isSystemApp = (appInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
+                        )
+                    }.getOrNull()
+                }.sortedBy { it.name }
+
+                val installedPackages = appList.mapTo(HashSet()) { it.packageName }
+                appIconCache.keys.removeAll { it !in installedPackages }
+                _installedApps.value = appList
+                hasLoadedApps = true
+            } finally {
+                if (isActive) _isLoadingApps.value = false
+            }
         }
     }
 
@@ -253,10 +328,12 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
                 val (owner, repo) = info
                 // 尝试获取最新正式版
                 val apiUrl = "https://api.github.com/repos/$owner/$repo/releases/latest"
+                val githubToken = getGitHubToken()
                 val response = client.get(apiUrl) {
                     // 使用标准的浏览器 Header
                     header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
                     header("Accept", "application/vnd.github+json")
+                    if (githubToken.isNotEmpty()) header("Authorization", "Bearer $githubToken")
                 }
                 
                 if (response.status.value in 200..299) {
@@ -286,7 +363,10 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
 
                     updateAppStatus(app.packageName, remoteVersion = latestVersion, isChecking = false, assets = assets, changelog = changelog, remoteStatus = "连接成功")
                     return
-                } else if (response.status.value == 403) {
+                } else if (response.status.value == 401) {
+                    updateAppStatus(app.packageName, isChecking = false, remoteStatus = "GitHub Token 无效")
+                    return
+                } else if (response.status.value == 403 || response.status.value == 429) {
                     updateAppStatus(app.packageName, isChecking = false, remoteStatus = "被限制 (API Rate Limit)")
                     return
                 } else if (response.status.value == 404) {
@@ -421,13 +501,14 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
                     throw Exception("无法解析下载地址: $finalUrl")
                 }
 
+                val progressLimiter = ProgressUpdateLimiter()
                 val response: HttpResponse = client.get(finalUrl) {
                     timeout {
                         requestTimeoutMillis = DOWNLOAD_TIMEOUT_MILLIS
                         socketTimeoutMillis = DOWNLOAD_SOCKET_TIMEOUT_MILLIS
                     }
                     onDownload { bytesSentTotal, contentLength ->
-                        if (contentLength > 0) {
+                        if (contentLength > 0 && progressLimiter.shouldEmit(bytesSentTotal, contentLength)) {
                             val progress = ((bytesSentTotal.toDouble() / contentLength) * 100).toInt()
                             TransferManager.updateProgress(
                                 transferId,
@@ -445,11 +526,11 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
                 TransferManager.markTransferring(transferId)
                 val channel: ByteReadChannel = response.bodyAsChannel()
                 partFile.outputStream().buffered().use { output ->
-                    while (!channel.isClosedForRead) {
-                        val packet = channel.readRemaining(8192)
-                        while (!packet.isEmpty) {
-                            output.write(packet.readBytes())
-                        }
+                    val buffer = ByteArray(DOWNLOAD_BUFFER_SIZE)
+                    while (true) {
+                        val bytesRead = channel.readAvailable(buffer, 0, buffer.size)
+                        if (bytesRead == -1) break
+                        if (bytesRead > 0) output.write(buffer, 0, bytesRead)
                     }
                 }
 
@@ -504,9 +585,11 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
         val apiUrl = "https://api.github.com/repos/$owner/$repo/releases/latest"
         
         return try {
+            val githubToken = getGitHubToken()
             val response = client.get(apiUrl) {
                 header("User-Agent", "PushTV-App")
                 header("Accept", "application/vnd.github+json")
+                if (githubToken.isNotEmpty()) header("Authorization", "Bearer $githubToken")
                 timeout {
                     requestTimeoutMillis = 15000
                     socketTimeoutMillis = 15000
@@ -549,12 +632,13 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
 
     override fun onCleared() {
         downloadJobs.values.forEach { it.cancel() }
-        client.close()
+        if (clientDelegate.isInitialized()) client.close()
         super.onCleared()
     }
 
     companion object {
         private const val DOWNLOAD_TIMEOUT_MILLIS = 10 * 60 * 1000L
         private const val DOWNLOAD_SOCKET_TIMEOUT_MILLIS = 30_000L
+        private const val DOWNLOAD_BUFFER_SIZE = 128 * 1024
     }
 }

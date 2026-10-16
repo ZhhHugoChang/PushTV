@@ -5,6 +5,8 @@ package com.example.pushtv.ui.home
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -36,8 +38,12 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.*
 import coil.compose.AsyncImage
@@ -58,11 +64,18 @@ fun SoftwareListScreen(
     onItemClick: (InstalledApp) -> Unit,
     focusRequesterMap: SnapshotStateMap<String, FocusRequester>
 ) {
-    val apps by viewModel.filteredApps.collectAsState()
-    val installedApps by viewModel.installedApps.collectAsState()
-    val filterMode by viewModel.filterMode.collectAsState()
-    val hideSystemApps by viewModel.hideSystemApps.collectAsState()
-    val favoriteUpdateCount by viewModel.favoriteUpdateCount.collectAsState()
+    val apps by viewModel.filteredApps.collectAsStateWithLifecycle()
+    val installedApps by viewModel.installedApps.collectAsStateWithLifecycle()
+    val filterMode by viewModel.filterMode.collectAsStateWithLifecycle()
+    val hideSystemApps by viewModel.hideSystemApps.collectAsStateWithLifecycle()
+    val favoriteUpdateCount by viewModel.favoriteUpdateCount.collectAsStateWithLifecycle()
+    val isLoadingApps by viewModel.isLoadingApps.collectAsStateWithLifecycle()
+    val hasGitHubToken by viewModel.hasGitHubToken.collectAsStateWithLifecycle()
+    var showGitHubTokenDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(viewModel) {
+        viewModel.ensureAppsLoaded()
+    }
 
     val allCount = remember(installedApps, hideSystemApps) {
         if (hideSystemApps) installedApps.count { !it.isSystemApp } else installedApps.size
@@ -73,9 +86,15 @@ fun SoftwareListScreen(
     val allFilterRequester = focusRequesterMap.getOrPut(TvFocusKeys.SOFTWARE_ALL) { FocusRequester() }
     val favoritesFilterRequester = focusRequesterMap.getOrPut(TvFocusKeys.SOFTWARE_FAVORITES) { FocusRequester() }
     val hideSystemRequester = focusRequesterMap.getOrPut(TvFocusKeys.SOFTWARE_HIDE_SYSTEM) { FocusRequester() }
+    val githubTokenRequester = focusRequesterMap.getOrPut(TvFocusKeys.SOFTWARE_GITHUB_TOKEN) { FocusRequester() }
     val checkRequester = focusRequesterMap.getOrPut(TvFocusKeys.SOFTWARE_CHECK) { FocusRequester() }
     val appKeys = apps.map { TvFocusKeys.app(it.packageName) }
     appKeys.forEach { key -> focusRequesterMap.getOrPut(key) { FocusRequester() } }
+    LaunchedEffect(appKeys) {
+        focusRequesterMap.keys.toList()
+            .filter { it.startsWith("software:app:") && it !in appKeys }
+            .forEach(focusRequesterMap::remove)
+    }
     val firstAppRequester = appKeys.firstOrNull()?.let(focusRequesterMap::get)
     val selectedFilterRequester = if (filterMode == FilterMode.FAVORITES) favoritesFilterRequester else allFilterRequester
     val gridState = rememberLazyGridState()
@@ -247,7 +266,7 @@ fun SoftwareListScreen(
                         .then(enterListOnDown)
                         .focusProperties {
                             left = favoritesFilterRequester
-                            right = checkRequester
+                            right = githubTokenRequester
                         }
                         .onFocusChanged { if (it.isFocused) onFocusKeyChanged(TvFocusKeys.SOFTWARE_HIDE_SYSTEM) },
                     colors = ButtonDefaults.colors(
@@ -273,6 +292,40 @@ fun SoftwareListScreen(
                     }
                 }
 
+                Button(
+                    onClick = { showGitHubTokenDialog = true },
+                    scale = ButtonDefaults.scale(focusedScale = 1f),
+                    modifier = Modifier
+                        .focusRequester(githubTokenRequester)
+                        .then(enterListOnDown)
+                        .focusProperties {
+                            left = hideSystemRequester
+                            right = checkRequester
+                        }
+                        .onFocusChanged { if (it.isFocused) onFocusKeyChanged(TvFocusKeys.SOFTWARE_GITHUB_TOKEN) },
+                    colors = ButtonDefaults.colors(
+                        containerColor = PushTVColors.TextPrimary.copy(alpha = 0.05f),
+                        focusedContainerColor = PushTVColors.Primary,
+                        contentColor = PushTVColors.TextPrimary,
+                        focusedContentColor = PushTVColors.TextPrimary
+                    ),
+                    shape = ButtonDefaults.shape(shape = RoundedCornerShape(12.dp)),
+                    border = ButtonDefaults.border(
+                        focusedBorder = Border(BorderStroke(2.dp, PushTVColors.TextPrimary), inset = (-1).dp)
+                    )
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = if (hasGitHubToken) Icons.Default.Key else Icons.Default.KeyOff,
+                            contentDescription = null,
+                            tint = if (hasGitHubToken) PushTVColors.Success else PushTVColors.TextPrimary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("GitHub Token", style = MaterialTheme.typography.labelLarge)
+                    }
+                }
+
                 // Global Check Update Button
                 Button(
                     onClick = { 
@@ -283,7 +336,7 @@ fun SoftwareListScreen(
                         .focusRequester(checkRequester)
                         .then(enterListOnDown)
                         .focusProperties {
-                            left = hideSystemRequester
+                            left = githubTokenRequester
                             right = FocusRequester.Cancel
                         }
                         .onFocusChanged { if (it.isFocused) onFocusKeyChanged(TvFocusKeys.SOFTWARE_CHECK) },
@@ -308,7 +361,11 @@ fun SoftwareListScreen(
         }
         Spacer(modifier = Modifier.height(32.dp))
 
-        if (apps.isEmpty()) {
+        if (isLoadingApps && installedApps.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("正在读取已安装应用...", color = PushTVColors.TextSecondary)
+            }
+        } else if (apps.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     val emptyIcon = when(filterMode) {
@@ -364,7 +421,183 @@ fun SoftwareListScreen(
         }
     }
 
+    if (showGitHubTokenDialog) {
+        GitHubTokenDialog(
+            hasExistingToken = hasGitHubToken,
+            onDismiss = { showGitHubTokenDialog = false },
+            onSave = { token ->
+                viewModel.saveGitHubToken(token)
+                showGitHubTokenDialog = false
+            }
+        )
+    }
+
 }
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun GitHubTokenDialog(
+    hasExistingToken: Boolean,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit
+) {
+    var token by remember { mutableStateOf("") }
+    var inputFocused by remember { mutableStateOf(false) }
+    val inputRequester = remember { FocusRequester() }
+    val saveRequester = remember { FocusRequester() }
+    val cancelRequester = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    fun releaseInputFocus() {
+        keyboardController?.hide()
+        focusManager.clearFocus(force = true)
+        runCatching { cancelRequester.requestFocus() }
+    }
+
+    fun dismissDialog() {
+        keyboardController?.hide()
+        focusManager.clearFocus(force = true)
+        onDismiss()
+    }
+
+    LaunchedEffect(Unit) {
+        repeat(3) {
+            withFrameNanos { }
+            if (runCatching { cancelRequester.requestFocus(); true }.getOrDefault(false)) return@LaunchedEffect
+        }
+    }
+
+    BackHandler {
+        if (inputFocused) {
+            releaseInputFocus()
+        } else {
+            dismissDialog()
+        }
+    }
+
+    Dialog(
+        onDismissRequest = ::dismissDialog,
+        properties = DialogProperties(dismissOnBackPress = false)
+    ) {
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            colors = NonInteractiveSurfaceDefaults.colors(containerColor = PushTVColors.Panel),
+            modifier = Modifier
+                .width(560.dp)
+                .focusGroup()
+                .focusProperties { exit = { FocusRequester.Cancel } }
+                .onPreviewKeyEvent { event ->
+                    val isBack = event.key == Key.Back ||
+                        event.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_BACK
+                    if (event.type == KeyEventType.KeyDown && isBack) {
+                        if (inputFocused) releaseInputFocus() else dismissDialog()
+                        true
+                    } else {
+                        false
+                    }
+                }
+        ) {
+            Column(modifier = Modifier.padding(32.dp)) {
+                Text(
+                    text = "配置 GitHub Token",
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = PushTVColors.TextPrimary
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    text = "Token 用于提高 GitHub 更新检测的请求额度，仅加密保存在本机，不会随更新地址上传。建议使用无额外权限、设置有效期的 Token。",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = PushTVColors.TextSecondary
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = if (hasExistingToken) {
+                        "当前已配置。输入新 Token 可替换；留空保存将清除。"
+                    } else {
+                        "尚未配置。Token 通常以 ghp_ 或 github_pat_ 开头。"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (hasExistingToken) PushTVColors.Success else PushTVColors.TextMuted
+                )
+                Spacer(modifier = Modifier.height(22.dp))
+                OutlinedTextField(
+                    value = token,
+                    onValueChange = { token = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(inputRequester)
+                        .focusProperties {
+                            up = FocusRequester.Cancel
+                            down = saveRequester
+                        }
+                        .onFocusChanged { inputFocused = it.isFocused },
+                    label = { Text("GitHub Token", color = PushTVColors.TextSecondary) },
+                    placeholder = { Text("ghp_... / github_pat_...", color = PushTVColors.TextMuted) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { releaseInputFocus() }),
+                    visualTransformation = PasswordVisualTransformation(),
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = PushTVColors.TextPrimary.copy(alpha = 0.05f),
+                        unfocusedContainerColor = Color.Transparent,
+                        focusedTextColor = PushTVColors.TextPrimary,
+                        unfocusedTextColor = PushTVColors.TextPrimary,
+                        focusedLabelColor = PushTVColors.Primary,
+                        unfocusedLabelColor = PushTVColors.TextSecondary,
+                        focusedIndicatorColor = PushTVColors.Primary,
+                        unfocusedIndicatorColor = PushTVColors.TextPrimary.copy(alpha = 0.2f)
+                    )
+                )
+                Spacer(modifier = Modifier.height(28.dp))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Button(
+                        onClick = {
+                            releaseInputFocus()
+                            onSave(token)
+                        },
+                        scale = ButtonDefaults.scale(focusedScale = 1f),
+                        modifier = Modifier
+                            .weight(1f)
+                            .focusRequester(saveRequester)
+                            .focusProperties {
+                                left = FocusRequester.Cancel
+                                right = cancelRequester
+                                up = inputRequester
+                                down = FocusRequester.Cancel
+                            },
+                        colors = ButtonDefaults.colors(
+                            containerColor = PushTVColors.TextPrimary.copy(alpha = 0.1f),
+                            focusedContainerColor = PushTVColors.Primary
+                        )
+                    ) { Text(if (token.isBlank() && hasExistingToken) "清除" else "保存") }
+
+                    Button(
+                        onClick = ::dismissDialog,
+                        scale = ButtonDefaults.scale(focusedScale = 1f),
+                        modifier = Modifier
+                            .weight(1f)
+                            .focusRequester(cancelRequester)
+                            .focusProperties {
+                                left = saveRequester
+                                right = FocusRequester.Cancel
+                                up = inputRequester
+                                down = FocusRequester.Cancel
+                            },
+                        colors = ButtonDefaults.colors(
+                            containerColor = PushTVColors.TextPrimary.copy(alpha = 0.1f),
+                            focusedContainerColor = PushTVColors.TextPrimary.copy(alpha = 0.2f)
+                        )
+                    ) { Text("取消") }
+                }
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun SoftwareItem(app: InstalledApp, onClick: () -> Unit, softwareViewModel: SoftwareViewModel, modifier: Modifier = Modifier) {
@@ -391,11 +624,7 @@ fun SoftwareItem(app: InstalledApp, onClick: () -> Unit, softwareViewModel: Soft
     ) {
         Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Box(modifier = Modifier.size(48.dp).clip(RoundedCornerShape(8.dp)).background(PushTVColors.TextPrimary.copy(alpha = 0.05f)), contentAlignment = Alignment.Center) {
-                AsyncImage(
-                    model = app.icon,
-                    contentDescription = null,
-                    modifier = Modifier.size(32.dp)
-                )
+                SoftwareAppIcon(app.packageName, softwareViewModel)
             }
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
@@ -422,6 +651,22 @@ fun SoftwareItem(app: InstalledApp, onClick: () -> Unit, softwareViewModel: Soft
             if (!isFocused) Text("管理", style = MaterialTheme.typography.bodySmall, color = PushTVColors.TextSecondary.copy(alpha = 0.6f))
         }
     }
+}
+
+@Composable
+private fun SoftwareAppIcon(packageName: String, viewModel: SoftwareViewModel) {
+    val icon by produceState<Any?>(
+        initialValue = viewModel.getCachedAppIcon(packageName),
+        packageName,
+        viewModel
+    ) {
+        if (value == null) value = viewModel.loadAppIcon(packageName)
+    }
+    AsyncImage(
+        model = icon,
+        contentDescription = null,
+        modifier = Modifier.size(32.dp)
+    )
 }
 
 @OptIn(ExperimentalTvMaterial3Api::class)

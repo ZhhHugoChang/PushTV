@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.core.content.FileProvider
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.*
 import coil.compose.AsyncImage
@@ -63,7 +64,9 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
 import androidx.compose.foundation.gestures.scrollBy
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import java.io.File
 
 @OptIn(ExperimentalTvMaterial3Api::class, ExperimentalComposeUiApi::class)
@@ -78,12 +81,21 @@ fun ActionDrawer(
     // drawerFocusRequester 由父组件传入并统一管理，绑定到抽屉内第一个可聚焦的按钮上
     val changelogFocusRequester = remember { FocusRequester() }
 
-    val apps by (softwareViewModel?.installedApps ?: remember { MutableStateFlow<List<InstalledApp>>(emptyList()) }).collectAsState()
-    val currentApp = if (packageName != null) apps.find { it.packageName == packageName } else null
-    val transfers by TransferManager.transfers.collectAsState()
-    val currentDownload = packageName?.let { currentPackage ->
-        transfers.find { it.id == "download:$currentPackage" }
+    val currentAppFlow = remember(packageName, softwareViewModel) {
+        softwareViewModel?.installedApps
+            ?.map { apps -> packageName?.let { pkg -> apps.find { it.packageName == pkg } } }
+            ?.distinctUntilChanged()
+            ?: flowOf<InstalledApp?>(null)
     }
+    val currentApp by currentAppFlow.collectAsStateWithLifecycle(initialValue = null)
+    val currentDownloadFlow = remember(packageName) {
+        TransferManager.transfers
+            .map { transfers ->
+                packageName?.let { pkg -> transfers.find { it.id == "download:$pkg" } }
+            }
+            .distinctUntilChanged()
+    }
+    val currentDownload by currentDownloadFlow.collectAsStateWithLifecycle(initialValue = null)
 
     val recommendedAsset = currentApp?.assets?.find { it.isRecommended }
     val primaryAsset = recommendedAsset ?: currentApp?.assets?.firstOrNull()
@@ -211,7 +223,7 @@ fun ActionDrawer(
                                 .verticalScroll(scrollState)
                         ) {
                             Text(
-                                text = currentApp.changelog.orEmpty(),
+                                text = currentApp?.changelog.orEmpty(),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = PushTVColors.TextSoft,
                                 lineHeight = 18.sp

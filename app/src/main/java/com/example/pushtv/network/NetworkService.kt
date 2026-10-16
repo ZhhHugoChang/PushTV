@@ -134,6 +134,36 @@ class NetworkService : Service() {
                             )
                         }
                     }
+                    get("/api/github/token") {
+                        val configured = SettingsRepo.getGitHubToken(applicationContext).isNotBlank()
+                        call.respondText(
+                            JSONObject().put("configured", configured).toString(),
+                            ContentType.Application.Json
+                        )
+                    }
+                    post("/api/github/token") {
+                        val params = call.receiveParameters()
+                        val clear = params["clear"] == "true"
+                        val token = params["token"]?.trim().orEmpty()
+                        if (!clear && token.isBlank()) {
+                            call.respondText(
+                                JSONObject().put("success", false).put("message", "Token 不能为空").toString(),
+                                ContentType.Application.Json,
+                                HttpStatusCode.BadRequest
+                            )
+                            return@post
+                        }
+
+                        SettingsRepo.saveGitHubToken(applicationContext, if (clear) "" else token)
+                        com.example.pushtv.utils.Events.triggerGitHubTokenChanged()
+                        call.respondText(
+                            JSONObject()
+                                .put("success", true)
+                                .put("configured", !clear)
+                                .toString(),
+                            ContentType.Application.Json
+                        )
+                    }
                     get("/api/webdav/config") {
                         val config = SettingsRepo.getWebDavConfig(applicationContext)
                         val status = BackupManager.webDavStatus.value.name
@@ -272,12 +302,13 @@ class NetworkService : Service() {
                                     TransferManager.markTransferring(transferId)
                                     part.streamProvider().use { input ->
                                         partFile.outputStream().buffered().use { output ->
-                                            val buffer = ByteArray(8192)
+                                            val buffer = ByteArray(128 * 1024)
+                                            val progressLimiter = ProgressUpdateLimiter()
                                             var bytes = input.read(buffer)
                                             while (bytes >= 0) {
                                                 output.write(buffer, 0, bytes)
                                                 bytesWritten += bytes
-                                                if (contentLength > 0) {
+                                                if (contentLength > 0 && progressLimiter.shouldEmit(bytesWritten, contentLength)) {
                                                     val progress = ((bytesWritten.toDouble() / contentLength) * 100).toInt()
                                                     TransferManager.updateProgress(transferId, originalFileName, progress)
                                                 }

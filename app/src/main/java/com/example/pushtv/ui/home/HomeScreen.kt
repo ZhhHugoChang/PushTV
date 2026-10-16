@@ -45,12 +45,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.core.content.FileProvider
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.*
 import coil.compose.AsyncImage
 import com.example.pushtv.data.TransferManager
-import com.example.pushtv.data.TransferProgress
-import com.example.pushtv.data.TransferState
 import com.example.pushtv.data.BackupManager
 import com.example.pushtv.ui.backup.BackupScreen
 import com.example.pushtv.ui.software.FilterMode
@@ -65,7 +64,8 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
 import androidx.compose.foundation.gestures.scrollBy
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import java.io.File
 
 data class ActionItem(
@@ -88,6 +88,7 @@ internal object TvFocusKeys {
     const val SOFTWARE_ALL = "software:filter:all"
     const val SOFTWARE_FAVORITES = "software:filter:favorites"
     const val SOFTWARE_HIDE_SYSTEM = "software:hide_system"
+    const val SOFTWARE_GITHUB_TOKEN = "software:github_token"
     const val SOFTWARE_CHECK = "software:check"
 
     fun file(path: String) = "home:file:$path"
@@ -100,6 +101,7 @@ internal object TvFocusKeys {
         SOFTWARE_ALL,
         SOFTWARE_FAVORITES,
         SOFTWARE_HIDE_SYSTEM,
+        SOFTWARE_GITHUB_TOKEN,
         SOFTWARE_CHECK
     )
 }
@@ -111,29 +113,37 @@ private enum class FocusLayer {
     URL_DIALOG
 }
 
+@Composable
+private fun KeepScreenOnWhileTransfersActive() {
+    val view = LocalView.current
+    val hasActiveTransfersFlow = remember {
+        TransferManager.transfers
+            .map { transfers -> transfers.any { it.isActive } }
+            .distinctUntilChanged()
+    }
+    val hasActiveTransfers by hasActiveTransfersFlow.collectAsStateWithLifecycle(initialValue = false)
+
+    SideEffect {
+        view.keepScreenOn = hasActiveTransfers
+    }
+    DisposableEffect(view) {
+        onDispose { view.keepScreenOn = false }
+    }
+}
+
 @OptIn(ExperimentalTvMaterial3Api::class, ExperimentalComposeUiApi::class)
 @Composable
 fun HomeScreen(viewModel: HomeViewModel = viewModel(), softwareViewModel: SoftwareViewModel = viewModel()) {
     val context = LocalContext.current
-    val view = LocalView.current
     val configuration = LocalConfiguration.current
     val isMobile = configuration.screenWidthDp < 600
-    val fileList by viewModel.fileList.collectAsState()
-    val ipAddress by viewModel.ipAddress.collectAsState()
-    val qrBitmap by viewModel.qrBitmap.collectAsState()
-    val storageInfo by viewModel.storageInfo.collectAsState()
-    val transfers by TransferManager.transfers.collectAsState()
-    val installedApps by softwareViewModel.installedApps.collectAsState()
-    val softwareFilterMode by softwareViewModel.filterMode.collectAsState()
+    val fileList by viewModel.fileList.collectAsStateWithLifecycle()
+    val ipAddress by viewModel.ipAddress.collectAsStateWithLifecycle()
+    val qrBitmap by viewModel.qrBitmap.collectAsStateWithLifecycle()
+    val storageInfo by viewModel.storageInfo.collectAsStateWithLifecycle()
+    val softwareFilterMode by softwareViewModel.filterMode.collectAsStateWithLifecycle()
 
-    SideEffect {
-        view.keepScreenOn = transfers.any { it.isActive }
-    }
-    DisposableEffect(view) {
-        onDispose {
-            view.keepScreenOn = false
-        }
-    }
+    KeepScreenOnWhileTransfersActive()
     
     var confirmationRequest by remember { mutableStateOf<ConfirmationRequest?>(null) }
     var editingUrlApp by remember { mutableStateOf<InstalledApp?>(null) }
@@ -155,11 +165,11 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel(), softwareViewModel: Softwa
     
     val isDrawerOpen = focusLayer == FocusLayer.DRAWER && drawerActions != null
 
-    LaunchedEffect(fileList, installedApps) {
-        val validKeys = TvFocusKeys.fixed +
-            fileList.map { TvFocusKeys.file(it.file.absolutePath) } +
-            installedApps.map { TvFocusKeys.app(it.packageName) }
-        focusRequesterMap.keys.toList().filterNot(validKeys::contains).forEach(focusRequesterMap::remove)
+    LaunchedEffect(fileList) {
+        val validFileKeys = fileList.mapTo(HashSet()) { TvFocusKeys.file(it.file.absolutePath) }
+        focusRequesterMap.keys.toList()
+            .filter { it.startsWith("home:file:") && it !in validFileKeys }
+            .forEach(focusRequesterMap::remove)
     }
 
     LaunchedEffect(focusLayer, restoreFocusGeneration) {

@@ -8,11 +8,14 @@ import androidx.lifecycle.viewModelScope
 import com.example.pushtv.data.*
 import com.example.pushtv.network.WebDavClient
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.io.File
 
 class BackupViewModel(application: Application) : AndroidViewModel(application) {
@@ -36,6 +39,7 @@ class BackupViewModel(application: Application) : AndroidViewModel(application) 
 
     val webDavStatus: StateFlow<WebDavStatus> = BackupManager.webDavStatus
     val activeProgress: StateFlow<BackupProgress?> = BackupManager.activeProgress
+    private var loadJob: Job? = null
 
     init {
         loadData()
@@ -47,143 +51,65 @@ class BackupViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun loadData() {
-        viewModelScope.launch {
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
             _isLoading.value = true
-            val config = SettingsRepo.getWebDavConfig(context)
-            _webDavConfig.value = config
-            BackupManager.checkWebDavStatus(context)
+            try {
+                val config = SettingsRepo.getWebDavConfig(context)
+                _webDavConfig.value = config
+                BackupManager.checkWebDavStatus(context)
 
-            // 读取已安装第三方应用
-            val installedApps = withContext(Dispatchers.IO) {
-                val pm = context.packageManager
-                val allApps = pm.getInstalledApplications(PackageManager.GET_META_DATA)
-                allApps.filter { (it.flags and ApplicationInfo.FLAG_SYSTEM) == 0 }
-                    .mapNotNull { appInfo ->
-                        try {
-                            val pkgInfo = pm.getPackageInfo(appInfo.packageName, 0)
-                            val sourceDir = appInfo.sourceDir
-                            val file = File(sourceDir)
-                            BackupAppItem(
-                                name = pm.getApplicationLabel(appInfo).toString(),
-                                packageName = appInfo.packageName,
-                                icon = pm.getApplicationIcon(appInfo),
-                                versionName = pkgInfo.versionName.orEmpty(),
-                                apkFileLength = if (file.exists()) file.length() else 0L,
-                                sourceDir = sourceDir,
-                                isSelected = false
-                            )
-                        } catch (e: Exception) {
-                            null
+                val (installedApps, remoteFiles, localIncomingFiles) = coroutineScope {
+                    val installed = async(Dispatchers.IO) { loadInstalledApps() }
+                    val remote = async(Dispatchers.IO) {
+                        if (config.isConfigured) {
+                            WebDavClient.listRemoteBackups(config).getOrDefault(emptyList())
+                        } else {
+                            emptyList()
                         }
                     }
-                    .sortedBy { it.name }
+                    val local = async(Dispatchers.IO) { loadLocalIncomingFiles() }
+                    Triple(installed.await(), remote.await(), local.await())
+                }
+
+                val matched = BackupListMatcher.match(installedApps, remoteFiles, localIncomingFiles)
+                _apps.value = matched.apps
+                _cloudApks.value = matched.cloudApks
+            } finally {
+                if (isActive) _isLoading.value = false
             }
-
-            // 查询云端备份
-            val remoteFiles = withContext(Dispatchers.IO) {
-                if (config.isConfigured) {
-                    WebDavClient.listRemoteBackups(config).getOrDefault(emptyList())
-                } else {
-                    emptyList()
-                }
-            }
-
-            // 查询本地 incoming 目录中已有的 APK 文件
-            val localIncomingFiles = withContext(Dispatchers.IO) {
-                val incomingDir = File(context.cacheDir, "incoming")
-                if (incomingDir.exists()) {
-                    incomingDir.listFiles { f -> f.isFile && f.extension.equals("apk", ignoreCase = true) }?.toList() ?: emptyList()
-                } else {
-                    emptyList()
-                }
-            }
-
-            // 比对本机安装应用与云端状态
-            val combined = installedApps.map { item ->
-                val cleanName = item.name.replace(Regex("[\\\\/:*?\"<>|\\s]"), "_")
-                val exactFileName = "${cleanName}_v${item.versionName}.apk"
-                val prefix = "${cleanName}_v"
-
-                val matchedLocalApk = localIncomingFiles.find { file ->
-                    file.name.equals(exactFileName, ignoreCase = true) ||
-                    file.name.startsWith(prefix, ignoreCase = true)
-                }
-
-                val exactMatch = remoteFiles.find { it.name.equals(exactFileName, ignoreCase = true) }
-                if (exactMatch != null) {
-                    item.copy(
-                        backupStatus = AppBackupStatus.BACKED_UP,
-                        remoteFileName = exactMatch.name,
-                        remoteVersion = item.versionName,
-                        localApkFile = matchedLocalApk
-                    )
-                } else {
-                    val anyMatch = remoteFiles.find { it.name.startsWith(prefix, ignoreCase = true) && it.name.endsWith(".apk", ignoreCase = true) }
-                    if (anyMatch != null) {
-                        val versionStr = anyMatch.name.removePrefix(prefix).removeSuffix(".apk")
-                        item.copy(
-                            backupStatus = AppBackupStatus.VERSION_MISMATCH,
-                            remoteFileName = anyMatch.name,
-                            remoteVersion = versionStr,
-                            localApkFile = matchedLocalApk
-                        )
-                    } else {
-                        item.copy(
-                            backupStatus = AppBackupStatus.NOT_BACKED_UP,
-                            localApkFile = matchedLocalApk
-                        )
-                    }
-                }
-            }
-
-            // 构建云端网盘 APK 独立列表
-            val cloudItems = remoteFiles.map { remoteFile ->
-                val fileName = remoteFile.name
-                val match = Regex("^(.*)_v([^_]+)\\.apk$", RegexOption.IGNORE_CASE).find(fileName)
-                val (parsedName, parsedVersion) = if (match != null) {
-                    val rawName = match.groupValues[1].replace("_", " ")
-                    val version = match.groupValues[2]
-                    rawName to version
-                } else {
-                    val rawName = fileName.removeSuffix(".apk").removeSuffix(".APK").replace("_", " ")
-                    rawName to null
-                }
-
-                val matchedLocalApk = localIncomingFiles.find { file ->
-                    file.name.equals(fileName, ignoreCase = true)
-                }
-
-                val matchedInstalledApp = installedApps.find { inst ->
-                    val cleanInstName = inst.name.replace(Regex("[\\\\/:*?\"<>|\\s]"), "_")
-                    val cleanParsedName = parsedName.replace(Regex("[\\\\/:*?\"<>|\\s]"), "_")
-                    cleanInstName.equals(cleanParsedName, ignoreCase = true) ||
-                    inst.name.equals(parsedName, ignoreCase = true)
-                }
-
-                val installStatus = when {
-                    matchedInstalledApp == null -> CloudAppInstallStatus.NOT_INSTALLED
-                    parsedVersion != null && matchedInstalledApp.versionName == parsedVersion -> CloudAppInstallStatus.INSTALLED_SAME
-                    else -> CloudAppInstallStatus.INSTALLED_DIFFERENT
-                }
-
-                CloudApkItem(
-                    fileName = fileName,
-                    appName = matchedInstalledApp?.name ?: parsedName,
-                    versionName = parsedVersion,
-                    size = remoteFile.size,
-                    installStatus = installStatus,
-                    installedVersion = matchedInstalledApp?.versionName,
-                    localApkFile = matchedLocalApk,
-                    installedPackageName = matchedInstalledApp?.packageName,
-                    icon = matchedInstalledApp?.icon,
-                    isSelected = false
-                )
-            }.sortedBy { it.appName }
-
-            _apps.value = combined
-            _cloudApks.value = cloudItems
-            _isLoading.value = false
         }
+    }
+
+    private fun loadInstalledApps(): List<BackupAppItem> {
+        val pm = context.packageManager
+        return pm.getInstalledApplications(PackageManager.GET_META_DATA)
+            .filter { (it.flags and ApplicationInfo.FLAG_SYSTEM) == 0 }
+            .mapNotNull { appInfo ->
+                runCatching {
+                    val pkgInfo = pm.getPackageInfo(appInfo.packageName, 0)
+                    val sourceDir = appInfo.sourceDir
+                    val file = File(sourceDir)
+                    BackupAppItem(
+                        name = pm.getApplicationLabel(appInfo).toString(),
+                        packageName = appInfo.packageName,
+                        icon = pm.getApplicationIcon(appInfo),
+                        versionName = pkgInfo.versionName.orEmpty(),
+                        apkFileLength = if (file.exists()) file.length() else 0L,
+                        sourceDir = sourceDir,
+                        isSelected = false
+                    )
+                }.getOrNull()
+            }
+            .sortedBy { it.name }
+    }
+
+    private fun loadLocalIncomingFiles(): List<File> {
+        val incomingDir = File(context.cacheDir, "incoming")
+        if (!incomingDir.exists()) return emptyList()
+        return incomingDir.listFiles { file ->
+            file.isFile && file.extension.equals("apk", ignoreCase = true)
+        }?.toList().orEmpty()
     }
 
     fun toggleSelect(packageName: String) {
@@ -334,4 +260,3 @@ data class StorageCheckResult(
     val cacheBytes: Long,
     val pendingDownloadItems: List<CloudApkItem>
 )
-

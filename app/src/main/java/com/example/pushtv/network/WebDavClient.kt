@@ -199,7 +199,6 @@ object WebDavClient {
     ): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             if (!localFile.exists()) throw IllegalArgumentException("本地 APK 文件不存在: ${localFile.absolutePath}")
-            ensureRemoteDirectory(config).getOrThrow()
 
             val uploadUrl = buildFileUrl(config, remoteFileName)
             val auth = buildAuthHeader(config)
@@ -210,7 +209,8 @@ object WebDavClient {
                 override fun contentLength() = totalSize
 
                 override fun writeTo(sink: BufferedSink) {
-                    val buffer = ByteArray(16 * 1024)
+                    val buffer = ByteArray(128 * 1024)
+                    val progressLimiter = ProgressUpdateLimiter()
                     FileInputStream(localFile).use { input ->
                         var uploaded = 0L
                         var read: Int
@@ -220,7 +220,7 @@ object WebDavClient {
                             }
                             sink.write(buffer, 0, read)
                             uploaded += read
-                            if (coroutineContext.isActive) {
+                            if (coroutineContext.isActive && progressLimiter.shouldEmit(uploaded, totalSize)) {
                                 runCatching { onProgress(uploaded, totalSize) } // CRASH-08: 保护进度回调异常
                             }
                         }
@@ -284,7 +284,8 @@ object WebDavClient {
 
                 body.byteStream().use { input ->
                     FileOutputStream(tempFile).use { output ->
-                        val buffer = ByteArray(16 * 1024)
+                        val buffer = ByteArray(128 * 1024)
+                        val progressLimiter = ProgressUpdateLimiter()
                         var received = 0L
                         var read: Int
                         while (input.read(buffer).also { read = it } != -1) {
@@ -293,7 +294,7 @@ object WebDavClient {
                             }
                             output.write(buffer, 0, read)
                             received += read
-                            if (coroutineContext.isActive) {
+                            if (coroutineContext.isActive && progressLimiter.shouldEmit(received, totalBytes)) {
                                 onProgress(received, totalBytes)
                             }
                         }

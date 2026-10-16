@@ -40,6 +40,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.*
 import coil.compose.AsyncImage
@@ -55,6 +56,8 @@ import com.example.pushtv.ui.home.ConfirmDialog
 import com.example.pushtv.ui.home.installApk
 import com.example.pushtv.ui.theme.PushTVColors
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -65,12 +68,15 @@ fun BackupScreen(
     backupViewModel: BackupViewModel = viewModel()
 ) {
     val context = LocalContext.current
-    val apps by backupViewModel.apps.collectAsState()
-    val cloudApks by backupViewModel.cloudApks.collectAsState()
-    val isLoading by backupViewModel.isLoading.collectAsState()
-    val webDavConfig by backupViewModel.webDavConfig.collectAsState()
-    val webDavStatus by backupViewModel.webDavStatus.collectAsState()
-    val activeProgress by backupViewModel.activeProgress.collectAsState()
+    val apps by backupViewModel.apps.collectAsStateWithLifecycle()
+    val cloudApks by backupViewModel.cloudApks.collectAsStateWithLifecycle()
+    val isLoading by backupViewModel.isLoading.collectAsStateWithLifecycle()
+    val webDavConfig by backupViewModel.webDavConfig.collectAsStateWithLifecycle()
+    val webDavStatus by backupViewModel.webDavStatus.collectAsStateWithLifecycle()
+    val hasActiveProgressFlow = remember(backupViewModel) {
+        backupViewModel.activeProgress.map { it != null }.distinctUntilChanged()
+    }
+    val hasActiveProgress by hasActiveProgressFlow.collectAsStateWithLifecycle(initialValue = false)
 
     // 选项卡状态：0 = 本机应用, 1 = 云端网盘
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -183,7 +189,7 @@ fun BackupScreen(
     // 顶部操作栏向下按键：优先跳转到“取消任务”按钮（若存在正在执行的任务），否则进入列表
     val enterDownFromTopBar = Modifier.onPreviewKeyEvent { event ->
         if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionDown) {
-            if (activeProgress != null) {
+            if (hasActiveProgress) {
                 runCatching { cancelTaskRequester.requestFocus() } // CRASH-03: 节点可能尚未附着
                 true
             } else {
@@ -802,9 +808,9 @@ fun BackupScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             // 正在传输进度条提示卡片（若有后台任务）
-            activeProgress?.let { progress ->
-                ActiveProgressBanner(
-                    progress = progress,
+            if (hasActiveProgress) {
+                ActiveProgressSection(
+                    backupViewModel = backupViewModel,
                     cancelRequester = cancelTaskRequester,
                     upRequester = if (!isSelectionMode) (if (selectedTab == 0) localTabRequester else cloudTabRequester) else selectAllRequester,
                     downAction = { enterCurrentAppList() },
@@ -822,7 +828,6 @@ fun BackupScreen(
                         }
                     }
                 )
-                Spacer(modifier = Modifier.height(16.dp))
             }
 
             // 列表显示区域（根据 selectedTab 区分：0 = 本机应用，1 = 云端网盘）
@@ -853,7 +858,7 @@ fun BackupScreen(
                             val leftRequester = if (index % 2 == 1) appKeys.getOrNull(index - 1)?.let(focusRequesterMap::get) else null
                             val rightRequester = if (index % 2 == 0) appKeys.getOrNull(index + 1)?.let(focusRequesterMap::get) else null
 
-                            val topTargetRequester = if (activeProgress != null) {
+                            val topTargetRequester = if (hasActiveProgress) {
                                 cancelTaskRequester
                             } else {
                                 if (!isSelectionMode) localTabRequester else selectAllRequester
@@ -915,7 +920,7 @@ fun BackupScreen(
                             val leftRequester = if (index % 2 == 1) cloudKeys.getOrNull(index - 1)?.let(focusRequesterMap::get) else null
                             val rightRequester = if (index % 2 == 0) cloudKeys.getOrNull(index + 1)?.let(focusRequesterMap::get) else null
 
-                            val topTargetRequester = if (activeProgress != null) {
+                            val topTargetRequester = if (hasActiveProgress) {
                                 cancelTaskRequester
                             } else {
                                 if (!isSelectionMode) cloudTabRequester else selectAllRequester
@@ -1157,6 +1162,28 @@ private fun WebDavStatusBadge(status: WebDavStatus, serverUrl: String) {
             style = MaterialTheme.typography.labelSmall,
             color = PushTVColors.TextSecondary
         )
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun ActiveProgressSection(
+    backupViewModel: BackupViewModel,
+    cancelRequester: FocusRequester,
+    upRequester: FocusRequester,
+    downAction: () -> Boolean,
+    onCancel: () -> Unit
+) {
+    val progress by backupViewModel.activeProgress.collectAsStateWithLifecycle()
+    progress?.let {
+        ActiveProgressBanner(
+            progress = it,
+            cancelRequester = cancelRequester,
+            upRequester = upRequester,
+            downAction = downAction,
+            onCancel = onCancel
+        )
+        Spacer(modifier = Modifier.height(16.dp))
     }
 }
 
@@ -2329,4 +2356,3 @@ private fun formatFileSize(bytes: Long): String {
         else -> "$bytes B"
     }
 }
-

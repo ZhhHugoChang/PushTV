@@ -22,6 +22,7 @@ object SettingsRepo {
     private val KEY_WEBDAV_USERNAME = stringPreferencesKey("webdav_username")
     private val KEY_WEBDAV_PASSWORD = stringPreferencesKey("webdav_password")
     private val KEY_WEBDAV_REMOTE_DIR = stringPreferencesKey("webdav_remote_dir")
+    private val KEY_GITHUB_TOKEN = stringPreferencesKey("github_token_encrypted")
 
     private fun getUrlKey(packageName: String) = stringPreferencesKey("$URL_PREFIX$packageName")
     private fun getFavKey(packageName: String) = booleanPreferencesKey("$FAVORITE_PREFIX$packageName")
@@ -54,6 +55,22 @@ object SettingsRepo {
             preferences[KEY_WEBDAV_USERNAME] = config.username
             preferences[KEY_WEBDAV_PASSWORD] = config.password
             preferences[KEY_WEBDAV_REMOTE_DIR] = config.remoteDir
+        }
+    }
+
+    suspend fun getGitHubToken(context: Context): String {
+        val encrypted = context.dataStore.data.first()[KEY_GITHUB_TOKEN].orEmpty()
+        return SecretCipher.decrypt(encrypted)
+    }
+
+    suspend fun saveGitHubToken(context: Context, token: String) {
+        val normalized = token.trim()
+        context.dataStore.edit { preferences ->
+            if (normalized.isEmpty()) {
+                preferences.remove(KEY_GITHUB_TOKEN)
+            } else {
+                preferences[KEY_GITHUB_TOKEN] = SecretCipher.encrypt(normalized)
+            }
         }
     }
 
