@@ -126,12 +126,14 @@ fun HomeContent(
     onFocusKeyChanged: (String) -> Unit,
     onNavigateToSoftware: () -> Unit,
     onNavigateToBackup: () -> Unit,
+    onNavigateToLogs: () -> Unit,
     onItemClick: (ApkInfo) -> Unit,
     onClearAll: () -> Unit,
     focusRequesterMap: SnapshotStateMap<String, FocusRequester>
 ) {
     val softwareRequester = focusRequesterMap.getOrPut(TvFocusKeys.HOME_SOFTWARE) { FocusRequester() }
     val backupRequester = focusRequesterMap.getOrPut(TvFocusKeys.HOME_BACKUP) { FocusRequester() }
+    val logsRequester = focusRequesterMap.getOrPut(TvFocusKeys.HOME_LOGS) { FocusRequester() }
     val clearRequester = focusRequesterMap.getOrPut(TvFocusKeys.HOME_CLEAR) { FocusRequester() }
     val firstFileRequester = fileList.firstOrNull()?.let {
         focusRequesterMap.getOrPut(TvFocusKeys.file(it.file.absolutePath)) { FocusRequester() }
@@ -202,7 +204,7 @@ fun HomeContent(
                         .focusRequester(backupRequester)
                         .focusProperties {
                             left = softwareRequester
-                            right = if (fileList.isNotEmpty()) clearRequester else FocusRequester.Cancel
+                            right = logsRequester
                             down = firstFileRequester ?: FocusRequester.Cancel
                         }
                         .onFocusChanged { if (it.isFocused) onFocusKeyChanged(TvFocusKeys.HOME_BACKUP) },
@@ -221,6 +223,23 @@ fun HomeContent(
                     }
                 }
 
+                androidx.compose.material3.Button(
+                    onClick = onNavigateToLogs,
+                    modifier = Modifier
+                        .weight(1f)
+                        .focusRequester(logsRequester)
+                        .focusProperties {
+                            left = backupRequester
+                            right = if (fileList.isNotEmpty()) clearRequester else FocusRequester.Cancel
+                            down = firstFileRequester ?: FocusRequester.Cancel
+                        }
+                        .onFocusChanged { if (it.isFocused) onFocusKeyChanged(TvFocusKeys.HOME_LOGS) },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = PushTVColors.Primary)
+                ) {
+                    Icon(Icons.Default.Terminal, contentDescription = "诊断日志", tint = PushTVColors.TextPrimary)
+                }
+
                 if (fileList.isNotEmpty()) {
                     androidx.compose.material3.OutlinedButton(
                         onClick = onClearAll,
@@ -228,7 +247,7 @@ fun HomeContent(
                             .weight(0.6f)
                             .focusRequester(clearRequester)
                             .focusProperties {
-                                left = backupRequester
+                                left = logsRequester
                                 down = firstFileRequester ?: FocusRequester.Cancel
                             }
                             .onFocusChanged { if (it.isFocused) onFocusKeyChanged(TvFocusKeys.HOME_CLEAR) },
@@ -284,6 +303,7 @@ fun HomeContent(
                 onClearAll = onClearAll,
                 onNavigateToSoftware = onNavigateToSoftware,
                 onNavigateToBackup = onNavigateToBackup,
+                onNavigateToLogs = onNavigateToLogs,
                 onFocusKeyChanged = onFocusKeyChanged,
                 focusRequesterMap = focusRequesterMap,
                 modifier = Modifier.weight(1.2f).fillMaxHeight()
@@ -333,12 +353,14 @@ fun FileListSection(
     onClearAll: () -> Unit,
     onNavigateToSoftware: () -> Unit,
     onNavigateToBackup: () -> Unit,
+    onNavigateToLogs: () -> Unit,
     onFocusKeyChanged: (String) -> Unit,
     focusRequesterMap: SnapshotStateMap<String, FocusRequester>,
     modifier: Modifier
 ) {
     val softwareRequester = focusRequesterMap.getOrPut(TvFocusKeys.HOME_SOFTWARE) { FocusRequester() }
     val backupRequester = focusRequesterMap.getOrPut(TvFocusKeys.HOME_BACKUP) { FocusRequester() }
+    val logsRequester = focusRequesterMap.getOrPut(TvFocusKeys.HOME_LOGS) { FocusRequester() }
     val clearRequester = focusRequesterMap.getOrPut(TvFocusKeys.HOME_CLEAR) { FocusRequester() }
     val fileKeys = fileList.map { TvFocusKeys.file(it.file.absolutePath) }
     fileKeys.forEach { key -> focusRequesterMap.getOrPut(key) { FocusRequester() } }
@@ -371,7 +393,7 @@ fun FileListSection(
     LaunchedEffect(isFocusActive) {
         if (isFocusActive && !initialFocusPlaced) {
             withFrameNanos { }
-            val preferredRequester = preferredFocusKey?.takeIf { it in fileKeys || it == TvFocusKeys.HOME_SOFTWARE || it == TvFocusKeys.HOME_BACKUP || it == TvFocusKeys.HOME_CLEAR }
+            val preferredRequester = preferredFocusKey?.takeIf { it in fileKeys || it == TvFocusKeys.HOME_SOFTWARE || it == TvFocusKeys.HOME_BACKUP || it == TvFocusKeys.HOME_LOGS || it == TvFocusKeys.HOME_CLEAR }
                 ?.let(focusRequesterMap::get)
             val focused = preferredRequester?.let { runCatching { it.requestFocus(); true }.getOrDefault(false) } == true
             if (!focused) {
@@ -441,7 +463,7 @@ fun FileListSection(
                         .then(enterFilesOnDown)
                         .focusProperties {
                             left = softwareRequester
-                            right = if (fileList.isNotEmpty()) clearRequester else FocusRequester.Cancel
+                            right = logsRequester
                         }
                         .onFocusChanged { if (it.isFocused) onFocusKeyChanged(TvFocusKeys.HOME_BACKUP) },
                     colors = ButtonDefaults.colors(
@@ -467,6 +489,29 @@ fun FileListSection(
                     }
                 }
 
+                Button(
+                    onClick = onNavigateToLogs,
+                    scale = ButtonDefaults.scale(focusedScale = 1f),
+                    modifier = Modifier
+                        .focusRequester(logsRequester)
+                        .then(enterFilesOnDown)
+                        .focusProperties {
+                            left = backupRequester
+                            right = if (fileList.isNotEmpty()) clearRequester else FocusRequester.Cancel
+                        }
+                        .onFocusChanged { if (it.isFocused) onFocusKeyChanged(TvFocusKeys.HOME_LOGS) },
+                    colors = ButtonDefaults.colors(
+                        containerColor = PushTVColors.TextPrimary.copy(alpha = 0.05f),
+                        focusedContainerColor = PushTVColors.Primary,
+                        contentColor = PushTVColors.TextPrimary,
+                        focusedContentColor = PushTVColors.TextPrimary
+                    ),
+                    border = ButtonDefaults.border(focusedBorder = Border(BorderStroke(2.dp, PushTVColors.TextPrimary), inset = (-1).dp)),
+                    shape = ButtonDefaults.shape(shape = RoundedCornerShape(12.dp))
+                ) {
+                    Icon(Icons.Default.Terminal, contentDescription = "诊断日志", tint = PushTVColors.TextPrimary)
+                }
+
                 if (fileList.isNotEmpty()) {
                     Button(
                         onClick = onClearAll,
@@ -475,7 +520,7 @@ fun FileListSection(
                             .focusRequester(clearRequester)
                             .then(enterFilesOnDown)
                             .focusProperties {
-                                left = backupRequester
+                                left = logsRequester
                             }
                             .onFocusChanged { if (it.isFocused) onFocusKeyChanged(TvFocusKeys.HOME_CLEAR) },
                         colors = ButtonDefaults.colors(

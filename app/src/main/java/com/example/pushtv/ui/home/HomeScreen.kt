@@ -52,6 +52,7 @@ import coil.compose.AsyncImage
 import com.example.pushtv.data.TransferManager
 import com.example.pushtv.data.BackupManager
 import com.example.pushtv.ui.backup.BackupScreen
+import com.example.pushtv.ui.logs.LogsScreen
 import com.example.pushtv.ui.software.FilterMode
 import com.example.pushtv.ui.software.InstalledApp
 import com.example.pushtv.ui.software.SoftwareViewModel
@@ -84,6 +85,7 @@ private data class ConfirmationRequest(
 internal object TvFocusKeys {
     const val HOME_SOFTWARE = "home:software"
     const val HOME_BACKUP = "home:backup"
+    const val HOME_LOGS = "home:logs"
     const val HOME_CLEAR = "home:clear"
     const val SOFTWARE_ALL = "software:filter:all"
     const val SOFTWARE_FAVORITES = "software:filter:favorites"
@@ -97,6 +99,7 @@ internal object TvFocusKeys {
     val fixed = setOf(
         HOME_SOFTWARE,
         HOME_BACKUP,
+        HOME_LOGS,
         HOME_CLEAR,
         SOFTWARE_ALL,
         SOFTWARE_FAVORITES,
@@ -214,7 +217,7 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel(), softwareViewModel: Softwa
         BackupManager.checkWebDavStatus(context)
     }
 
-    BackHandler(enabled = currentScreen != 2 && (focusLayer == FocusLayer.CONTENT || focusLayer == FocusLayer.DRAWER)) {
+    BackHandler(enabled = currentScreen != 2 && currentScreen != 3 && (focusLayer == FocusLayer.CONTENT || focusLayer == FocusLayer.DRAWER)) {
         if (focusLayer == FocusLayer.DRAWER) {
             closeDrawerAndRestore()
         } else if (currentScreen != 0) {
@@ -258,6 +261,7 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel(), softwareViewModel: Softwa
                     onFocusKeyChanged = { lastHomeFocusKey = it },
                     onNavigateToSoftware = { currentScreen = 1 },
                     onNavigateToBackup = { currentScreen = 2 },
+                    onNavigateToLogs = { currentScreen = 3 },
                     onItemClick = { apk ->
                         drawerOriginKey = TvFocusKeys.file(apk.file.absolutePath)
                         drawerTitle = apk.name
@@ -363,11 +367,19 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel(), softwareViewModel: Softwa
                     },
                     focusRequesterMap = focusRequesterMap
                 )
-            } else {
+            } else if (currentScreen == 2) {
                 BackupScreen(
                     onNavigateBack = {
                         currentScreen = 0
                         lastHomeFocusKey = TvFocusKeys.HOME_BACKUP
+                        restoreFocusGeneration++
+                    }
+                )
+            } else {
+                LogsScreen(
+                    onNavigateBack = {
+                        currentScreen = 0
+                        lastHomeFocusKey = TvFocusKeys.HOME_LOGS
                         restoreFocusGeneration++
                     }
                 )

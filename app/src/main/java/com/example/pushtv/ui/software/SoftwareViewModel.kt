@@ -1,5 +1,7 @@
 package com.example.pushtv.ui.software
 
+import com.example.pushtv.logging.AppLog
+
 import android.app.Application
 import android.content.pm.PackageManager
 import androidx.lifecycle.AndroidViewModel
@@ -272,6 +274,8 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
             return
         }
 
+        AppLog.info("UpdateCheck", "Batch check started: ${appsToCheck.size} applications")
+
         viewModelScope.launch {
             withContext(Dispatchers.Main) {
                 val typeText = if (mode == FilterMode.FAVORITES) "收藏" else "全部"
@@ -293,6 +297,10 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
             val incomparableAppsCount = results.count {
                 it.remoteStatus == "连接成功" && !canCompareVersions(it.versionName, it.remoteVersion)
             }
+            AppLog.info(
+                "UpdateCheck",
+                "Batch check completed: total=${appsToCheck.size}, updates=$updatedAppsCount, failed=$failedAppsCount, incomparable=$incomparableAppsCount"
+            )
             
             withContext(Dispatchers.Main) {
                 when {
@@ -321,6 +329,8 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
     }
 
     private suspend fun performCheckUpdate(app: InstalledApp) {
+        val startedAt = System.currentTimeMillis()
+        AppLog.info("UpdateCheck", "Checking ${app.name} (${app.packageName})")
         updateAppStatus(app.packageName, isChecking = true, remoteStatus = "正在连接...")
         try {
             val info = parseGitHubUrl(app.updateUrl)
@@ -362,24 +372,33 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
                     }
 
                     updateAppStatus(app.packageName, remoteVersion = latestVersion, isChecking = false, assets = assets, changelog = changelog, remoteStatus = "连接成功")
+                    AppLog.info(
+                        "UpdateCheck",
+                        "Checked ${app.packageName}: version=${latestVersion.orEmpty()}, apkAssets=${assets.size}, durationMs=${System.currentTimeMillis() - startedAt}"
+                    )
                     return
                 } else if (response.status.value == 401) {
                     updateAppStatus(app.packageName, isChecking = false, remoteStatus = "GitHub Token 无效")
+                    AppLog.warn("UpdateCheck", "Check rejected for ${app.packageName}: GitHub Token invalid")
                     return
                 } else if (response.status.value == 403 || response.status.value == 429) {
                     updateAppStatus(app.packageName, isChecking = false, remoteStatus = "被限制 (API Rate Limit)")
+                    AppLog.warn("UpdateCheck", "Check rate limited for ${app.packageName}: HTTP ${response.status.value}")
                     return
                 } else if (response.status.value == 404) {
                     updateAppStatus(app.packageName, remoteVersion = "未发布版本", isChecking = false, remoteStatus = "未找到版本")
+                    AppLog.warn("UpdateCheck", "No release found for ${app.packageName}: HTTP 404")
                     return
                 } else {
                     updateAppStatus(app.packageName, isChecking = false, remoteStatus = "服务器错误 (${response.status.value})")
+                    AppLog.warn("UpdateCheck", "Check failed for ${app.packageName}: HTTP ${response.status.value}")
                     return
                 }
             }
             updateAppStatus(app.packageName, isChecking = false, remoteStatus = "地址解析失败")
+            AppLog.warn("UpdateCheck", "Update address could not be parsed for ${app.packageName}")
         } catch (e: Exception) {
-            e.printStackTrace()
+            AppLog.error("UpdateCheck", "Update check failed for ${app.packageName}", e)
             // 提取简短的系统报错信息
             val errorMsg = e.message?.take(30) ?: e.javaClass.simpleName
             updateAppStatus(app.packageName, isChecking = false, remoteStatus = "失败: $errorMsg")
@@ -458,16 +477,21 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
         }
 
         android.widget.Toast.makeText(context, "开始下载 ${app.name}", android.widget.Toast.LENGTH_SHORT).show()
+        AppLog.info("Download", "Download started: ${app.name} (${app.packageName})")
         val request = DownloadRequest(app, urlToUse, specificUrl != null)
         downloadRequests[transferId] = request
         launchDownload(transferId, fileName, request)
     }
 
     fun cancelDownload(packageName: String) {
+        AppLog.warn("Download", "Download cancellation requested: $packageName")
         downloadJobs[downloadTransferId(packageName)]?.cancel()
     }
 
     fun cancelAllDownloads() {
+        if (downloadJobs.isNotEmpty()) {
+            AppLog.warn("Download", "Cancel all downloads requested: count=${downloadJobs.size}")
+        }
         downloadJobs.keys.toList().forEach { transferId ->
             downloadJobs[transferId]?.cancel()
             TransferManager.remove(transferId)
@@ -480,6 +504,7 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
         val request = downloadRequests[transferId] ?: return
         val fileName = "${request.app.name}_update.apk"
         if (!TransferManager.startTransfer(transferId, fileName)) return
+        AppLog.info("Download", "Download retry started: ${request.app.name} ($packageName)")
         launchDownload(transferId, fileName, request)
     }
 
@@ -489,6 +514,7 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
         request: DownloadRequest
     ) {
         val job = viewModelScope.launch(Dispatchers.IO) {
+            val startedAt = System.currentTimeMillis()
             val downloadDir = File(context.cacheDir, "downloads").apply { mkdirs() }
             val partFile = File(downloadDir, "${request.app.packageName}.apk.part")
             val finalFile = File(downloadDir, "${request.app.packageName}-${System.currentTimeMillis()}.apk")
@@ -538,13 +564,25 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
                 moveCompletedDownload(partFile, finalFile)
                 triggerInstallation(finalFile)
                 TransferManager.markComplete(transferId)
+                AppLog.info(
+                    "Download",
+                    "Download completed: ${request.app.packageName}, file=${finalFile.name}, bytes=${finalFile.length()}, durationMs=${System.currentTimeMillis() - startedAt}"
+                )
             } catch (e: CoroutineCancellationException) {
                 partFile.delete()
                 finalFile.delete()
                 TransferManager.markCanceled(transferId)
+                AppLog.warn(
+                    "Download",
+                    "Download canceled: ${request.app.packageName}, durationMs=${System.currentTimeMillis() - startedAt}"
+                )
                 throw e
             } catch (e: Exception) {
-                e.printStackTrace()
+                AppLog.error(
+                    "Download",
+                    "Download failed: ${request.app.packageName}, durationMs=${System.currentTimeMillis() - startedAt}",
+                    e
+                )
                 partFile.delete()
                 finalFile.delete()
                 TransferManager.markFailed(transferId, e.message ?: "下载失败")
@@ -605,7 +643,7 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
                 trimmedUrl
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            AppLog.error("UpdateCheck", "Could not resolve GitHub release URL", e)
             trimmedUrl
         }
     }
@@ -623,8 +661,9 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
                 intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
                 intent.addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 context.startActivity(intent)
+                AppLog.info("Installer", "Installer opened for ${file.name}")
             } catch (e: Exception) {
-                e.printStackTrace()
+                AppLog.error("Installer", "Could not open installer for ${file.name}", e)
                 android.widget.Toast.makeText(context, "无法启动安装，请手动安装 APK", android.widget.Toast.LENGTH_LONG).show()
             }
         }

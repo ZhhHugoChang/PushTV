@@ -1,5 +1,7 @@
 package com.example.pushtv.network
 
+import com.example.pushtv.logging.AppLog
+
 import com.example.pushtv.data.WebDavConfig
 import com.example.pushtv.data.WebDavRemoteFile
 import kotlinx.coroutines.CancellationException
@@ -186,7 +188,7 @@ object WebDavClient {
                 eventType = parser.next()
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            AppLog.error("WebDAV", "Could not parse remote file list", e)
         }
         return files
     }

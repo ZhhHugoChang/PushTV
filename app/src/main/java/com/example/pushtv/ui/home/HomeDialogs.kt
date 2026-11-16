@@ -2,6 +2,8 @@
 
 package com.example.pushtv.ui.home
 
+import com.example.pushtv.logging.AppLog
+
 import android.content.Context
 import android.content.Intent
 import androidx.activity.compose.BackHandler
@@ -138,6 +140,8 @@ fun installApk(context: Context, apkFile: File) {
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         context.startActivity(intent)
-    } catch (e: Exception) { e.printStackTrace() }
+        AppLog.info("Installer", "Installer opened for ${apkFile.name}")
+    } catch (e: Exception) {
+        AppLog.error("Installer", "Could not open installer for ${apkFile.name}", e)
+    }
 }
-

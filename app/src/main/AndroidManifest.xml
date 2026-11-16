@@ -20,6 +20,7 @@
         android:required="false" />
 
     <application
+        android:name=".PushTVApplication"
         android:usesCleartextTraffic="true"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"

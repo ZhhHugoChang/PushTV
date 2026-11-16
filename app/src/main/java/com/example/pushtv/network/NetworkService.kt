@@ -15,6 +15,7 @@ import com.example.pushtv.data.BackupManager
 import com.example.pushtv.data.BackupAppItem
 import com.example.pushtv.data.WebDavConfig
 import com.example.pushtv.network.WebDavClient
+import com.example.pushtv.logging.AppLog
 import io.ktor.server.application.*
 import io.ktor.server.engine.*
 import io.ktor.server.netty.*
@@ -48,6 +49,7 @@ class NetworkService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        AppLog.info("NetworkService", "Service created")
         createNotificationChannel()
         
         val notification = createNotification()
@@ -83,6 +85,8 @@ class NetworkService : Service() {
 
     private fun startServer() {
         serviceScope.launch {
+            AppLog.info("NetworkService", "Starting LAN server on 0.0.0.0:8899")
+            try {
             server = embeddedServer(Netty, port = 8899, host = "0.0.0.0") {
                 routing {
                     get("/") {
@@ -111,6 +115,60 @@ class NetworkService : Service() {
                             }.getOrNull()
                         }
                         call.respondText(JSONArray(appList).toString(), ContentType.Application.Json)
+                    }
+                    get("/api/logs/status") {
+                        call.respondText(
+                            JSONObject().apply {
+                                put("enabled", AppLog.remoteAccessEnabled.value)
+                                put("count", AppLog.snapshot().size)
+                                put("limit", AppLog.MAX_ENTRIES)
+                            }.toString(),
+                            ContentType.Application.Json
+                        )
+                    }
+                    get("/api/logs") {
+                        if (!AppLog.remoteAccessEnabled.value) {
+                            call.respondText(
+                                JSONObject().put("success", false).put("message", "请先在电视端临时开启远程日志").toString(),
+                                ContentType.Application.Json,
+                                HttpStatusCode.Forbidden
+                            )
+                            return@get
+                        }
+                        val afterId = call.request.queryParameters["afterId"]?.toLongOrNull()
+                        val json = JSONArray().apply {
+                            AppLog.snapshot(afterId).forEach { entry ->
+                                put(JSONObject().apply {
+                                    put("id", entry.id)
+                                    put("timestamp", entry.timestamp)
+                                    put("level", entry.level.name)
+                                    put("tag", entry.tag)
+                                    put("message", entry.message)
+                                })
+                            }
+                        }
+                        call.respondText(json.toString(), ContentType.Application.Json)
+                    }
+                    get("/api/logs/download") {
+                        if (!AppLog.remoteAccessEnabled.value) {
+                            call.respondText("请先在电视端临时开启远程日志", ContentType.Text.Plain, HttpStatusCode.Forbidden)
+                            return@get
+                        }
+                        val filename = "PushTV-logs-${System.currentTimeMillis()}.txt"
+                        call.response.header(HttpHeaders.ContentDisposition, "attachment; filename=\"$filename\"")
+                        call.respondText(AppLog.exportText(), ContentType.Text.Plain)
+                    }
+                    delete("/api/logs") {
+                        if (!AppLog.remoteAccessEnabled.value) {
+                            call.respondText(
+                                JSONObject().put("success", false).put("message", "请先在电视端临时开启远程日志").toString(),
+                                ContentType.Application.Json,
+                                HttpStatusCode.Forbidden
+                            )
+                            return@delete
+                        }
+                        AppLog.clear()
+                        call.respondText("{\"success\":true}", ContentType.Application.Json)
                     }
                     post("/api/save_url") {
                         val params = call.receiveParameters()
@@ -270,6 +328,8 @@ class NetworkService : Service() {
                     post("/api/upload") {
                         var currentTransferId: String? = null
                         var pendingFile: File? = null
+                        var currentFileName: String? = null
+                        var uploadStartedAt = 0L
                         try {
                             val multipart = call.receiveMultipart()
                             val uploadDir = File(applicationContext.cacheDir, "incoming")
@@ -280,7 +340,9 @@ class NetworkService : Service() {
                             while (part != null) {
                                 if (part is PartData.FileItem) {
                                     val originalFileName = File(part.originalFileName ?: "upload.apk").name
+                                    currentFileName = originalFileName
                                     if (!originalFileName.endsWith(".apk", ignoreCase = true)) {
+                                        AppLog.warn("Upload", "Upload rejected: unsupported file $originalFileName")
                                         part.dispose()
                                         call.respondText(
                                             """{"success":false,"message":"仅支持 APK 文件"}""",
@@ -291,6 +353,8 @@ class NetworkService : Service() {
                                     }
                                     val transferId = "upload:${UUID.randomUUID()}"
                                     currentTransferId = transferId
+                                    uploadStartedAt = System.currentTimeMillis()
+                                    AppLog.info("Upload", "Upload started: file=$originalFileName")
                                     TransferManager.startTransfer(transferId, originalFileName)
                                     val timestamp = System.currentTimeMillis()
                                     val partFile = File(uploadDir, ".$timestamp-$originalFileName.part")
@@ -323,6 +387,10 @@ class NetworkService : Service() {
                                     pendingFile = null
                                     savedFile = completedFile
                                     TransferManager.markComplete(transferId)
+                                    AppLog.info(
+                                        "Upload",
+                                        "Upload completed: file=$originalFileName, bytes=${completedFile.length()}, durationMs=${System.currentTimeMillis() - uploadStartedAt}"
+                                    )
                                     currentTransferId = null
                                 }
                                 part.dispose()
@@ -337,6 +405,7 @@ class NetworkService : Service() {
                                 )
                                 triggerInstallation(savedFile)
                             } else {
+                                AppLog.warn("Upload", "Upload request contained no file")
                                 call.respondText(
                                     """{"success":false,"message":"未找到文件"}""",
                                     ContentType.Application.Json,
@@ -344,7 +413,8 @@ class NetworkService : Service() {
                                 )
                             }
                         } catch (e: Exception) {
-                            e.printStackTrace()
+                            val elapsed = if (uploadStartedAt > 0) System.currentTimeMillis() - uploadStartedAt else 0L
+                            AppLog.error("Upload", "Upload failed: file=${currentFileName.orEmpty()}, durationMs=$elapsed", e)
                             pendingFile?.delete()
                             currentTransferId?.let {
                                 TransferManager.markFailed(it, e.message ?: "上传失败")
@@ -364,6 +434,10 @@ class NetworkService : Service() {
                     }
                 }
             }.start(wait = false)
+            AppLog.info("NetworkService", "LAN server started")
+            } catch (e: Exception) {
+                AppLog.error("NetworkService", "LAN server failed to start", e)
+            }
         }
     }
 
@@ -396,8 +470,9 @@ class NetworkService : Service() {
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             startActivity(intent)
+            AppLog.info("Installer", "Installer opened for ${apkFile.name}")
         } catch (e: Exception) {
-            e.printStackTrace()
+            AppLog.error("Installer", "Could not open installer for ${apkFile.name}", e)
         }
     }
 
@@ -411,6 +486,7 @@ class NetworkService : Service() {
     }
 
     override fun onDestroy() {
+        AppLog.info("NetworkService", "Service stopping")
         server?.stop(1000, 2000)
         serviceScope.cancel()
         super.onDestroy()

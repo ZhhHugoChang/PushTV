@@ -69,6 +69,24 @@
         .section { display: none; opacity: 0; transform: translateY(10px); transition: 0.4s; }
         .section.active { display: block; opacity: 1; transform: translateY(0); }
 
+        .logs-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 20px; overflow: hidden; }
+        .logs-toolbar { padding: 18px; display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; border-bottom: 1px solid var(--border); }
+        .logs-title { font-size: 1.1rem; font-weight: 750; }
+        .logs-subtitle { color: #94a3b8; font-size: 0.85rem; margin-top: 5px; }
+        .logs-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+        .logs-viewport { height: 520px; overflow-y: auto; overflow-x: hidden; padding: 12px; scrollbar-gutter: stable; }
+        .log-row { display: grid; grid-template-columns: 105px 58px minmax(0, 1fr); gap: 10px; padding: 10px 8px; border-bottom: 1px solid rgba(255,255,255,0.06); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.82rem; line-height: 1.5; }
+        .log-time { color: #64748b; }
+        .log-level { font-weight: 800; }
+        .log-level.INFO { color: var(--primary); }
+        .log-level.WARN { color: #f59e0b; }
+        .log-level.ERROR { color: #fb7185; }
+        .log-message { min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; color: #e2e8f0; }
+        .log-tag { color: #94a3b8; margin-right: 8px; font-weight: 700; }
+        .logs-empty { color: #64748b; text-align: center; padding: 80px 20px; }
+        .logs-notice { display: none; position: sticky; bottom: 12px; width: max-content; margin: 0 auto; border: 1px solid var(--primary); background: #0f172a; color: #e0f2fe; border-radius: 999px; padding: 8px 14px; cursor: pointer; }
+        .logs-notice.visible { display: block; }
+
         /* 发光卡片设计 */
         .app-card, .drop-zone, .mirror-section, .search-container {
             background: var(--card-bg);
@@ -483,6 +501,7 @@
                 <div class="tab active" onclick="showSection('upload', this)">文件传输</div>
                 <div class="tab" onclick="showSection('apps', this)">更新管理</div>
                 <div class="tab" onclick="showSection('webdav', this)">WebDAV</div>
+                <div class="tab" onclick="showSection('logs', this)">诊断日志</div>
             </div>
         </div>
 
@@ -569,6 +588,27 @@
                 <!-- 动态加载 -->
             </div>
         </div>
+
+        <div id="logs-section" class="section">
+            <div class="logs-card">
+                <div class="logs-toolbar">
+                    <div>
+                        <div class="logs-title">运行日志 <span id="logsCount" style="color: var(--primary);">0/500</span></div>
+                        <div id="logsStatus" class="logs-subtitle">正在检查电视端授权状态...</div>
+                    </div>
+                    <div class="logs-actions">
+                        <button class="btn btn-secondary" onclick="refreshLogs(true)">刷新</button>
+                        <button class="btn btn-secondary" onclick="jumpToLatest()">最新</button>
+                        <button class="btn btn-secondary" onclick="clearLogs()">清空</button>
+                        <button id="downloadLogsButton" class="btn btn-primary" onclick="downloadLogs()" disabled>下载</button>
+                    </div>
+                </div>
+                <div id="logsViewport" class="logs-viewport">
+                    <div id="logsEmpty" class="logs-empty">请先在电视的“诊断日志”中开启手机查看</div>
+                    <button id="logsNotice" class="logs-notice" onclick="jumpToLatest()">有新日志 · 回到最新</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <footer>PushTV - 专注电视端极速体验</footer>
@@ -584,6 +624,111 @@
                 loadGitHubTokenConfig();
             }
             if(id === 'webdav') loadWebDavSection();
+            if(id === 'logs') startLogPolling();
+            else stopLogPolling();
+        }
+
+        let logPollTimer = null;
+        let logEntries = [];
+        let lastLogId = 0;
+
+        function startLogPolling() {
+            stopLogPolling();
+            refreshLogs(false);
+            logPollTimer = setInterval(() => refreshLogs(false), 2000);
+        }
+
+        function stopLogPolling() {
+            if (logPollTimer) clearInterval(logPollTimer);
+            logPollTimer = null;
+        }
+
+        async function refreshLogs(forceReload) {
+            const viewport = document.getElementById('logsViewport');
+            const nearBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 56;
+            try {
+                const statusResponse = await fetch('/api/logs/status', { cache: 'no-store' });
+                const status = await statusResponse.json();
+                document.getElementById('logsCount').textContent = `${status.count}/${status.limit}`;
+                document.getElementById('downloadLogsButton').disabled = !status.enabled;
+                if (!status.enabled) {
+                    document.getElementById('logsStatus').textContent = '远程查看未开启，请在电视端“诊断日志”中临时开启';
+                    logEntries = [];
+                    lastLogId = 0;
+                    renderLogs(false);
+                    return;
+                }
+                document.getElementById('logsStatus').textContent = '已授权 · 每 2 秒增量刷新 · 凭据已自动脱敏';
+                if (forceReload) {
+                    logEntries = [];
+                    lastLogId = 0;
+                }
+                const response = await fetch(`/api/logs?afterId=${lastLogId}`, { cache: 'no-store' });
+                if (!response.ok) throw new Error('日志读取失败');
+                const incoming = await response.json();
+                if (incoming.length) {
+                    logEntries = logEntries.concat(incoming).slice(-500);
+                    lastLogId = logEntries[logEntries.length - 1].id;
+                    renderLogs(nearBottom);
+                    if (!nearBottom) document.getElementById('logsNotice').classList.add('visible');
+                } else if (forceReload) {
+                    renderLogs(true);
+                }
+            } catch (error) {
+                document.getElementById('logsStatus').textContent = error.message || '日志连接失败';
+            }
+        }
+
+        function renderLogs(followLatest) {
+            const viewport = document.getElementById('logsViewport');
+            viewport.querySelectorAll('.log-row').forEach(row => row.remove());
+            const empty = document.getElementById('logsEmpty');
+            empty.style.display = logEntries.length ? 'none' : 'block';
+            const notice = document.getElementById('logsNotice');
+            const fragment = document.createDocumentFragment();
+            logEntries.forEach(entry => {
+                const row = document.createElement('div');
+                row.className = 'log-row';
+                const time = document.createElement('span');
+                time.className = 'log-time';
+                time.textContent = new Date(entry.timestamp).toLocaleTimeString('zh-CN', { hour12: false }) + '.' + String(new Date(entry.timestamp).getMilliseconds()).padStart(3, '0');
+                const level = document.createElement('span');
+                level.className = `log-level ${entry.level}`;
+                level.textContent = entry.level;
+                const message = document.createElement('span');
+                message.className = 'log-message';
+                const tag = document.createElement('span');
+                tag.className = 'log-tag';
+                tag.textContent = entry.tag;
+                message.append(tag, document.createTextNode(entry.message));
+                row.append(time, level, message);
+                fragment.appendChild(row);
+            });
+            viewport.insertBefore(fragment, notice);
+            if (followLatest) jumpToLatest();
+        }
+
+        function jumpToLatest() {
+            const viewport = document.getElementById('logsViewport');
+            viewport.scrollTop = viewport.scrollHeight;
+            document.getElementById('logsNotice').classList.remove('visible');
+        }
+
+        function downloadLogs() {
+            window.location.href = '/api/logs/download';
+        }
+
+        async function clearLogs() {
+            if (!window.confirm('确定清空电视上保存的全部诊断日志吗？')) return;
+            const response = await fetch('/api/logs', { method: 'DELETE' });
+            if (!response.ok) {
+                alert('请先在电视端开启手机查看');
+                return;
+            }
+            logEntries = [];
+            lastLogId = 0;
+            renderLogs(false);
+            document.getElementById('logsCount').textContent = '0/500';
         }
 
         // 文件上传逻辑 (保持原样并增强)

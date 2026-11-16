@@ -11,8 +11,23 @@ android {
         applicationId = "com.example.pushtv"
         minSdk = 28
         targetSdk = 34
-        versionCode = 6
-        versionName = "1.5"
+        versionCode = 7
+        versionName = "1.6"
+    }
+
+    flavorDimensions += "abi"
+    productFlavors {
+        create("universal") {
+            dimension = "abi"
+        }
+        create("arm64") {
+            dimension = "abi"
+            ndk { abiFilters += "arm64-v8a" }
+        }
+        create("arm32") {
+            dimension = "abi"
+            ndk { abiFilters += "armeabi-v7a" }
+        }
     }
 
     buildTypes {
@@ -82,11 +97,26 @@ dependencies {
 
 // 自定义生成的 APK 文件名
 androidComponents {
+    beforeVariants { variantBuilder ->
+        val abi = variantBuilder.productFlavors.firstOrNull { it.first == "abi" }?.second
+        if (variantBuilder.buildType == "debug" && abi != "universal") {
+            variantBuilder.enable = false
+        }
+        if (variantBuilder.buildType == "release" && abi == "universal") {
+            variantBuilder.enable = false
+        }
+    }
     onVariants { variant ->
         variant.outputs.forEach { output ->
             val appName = "PushTV"
             val versionName = variant.outputs.firstOrNull()?.versionName?.get() ?: "1.0"
-            output.outputFileName.set("${appName}_v${versionName}_${variant.name}.apk")
+            val abi = variant.productFlavors.firstOrNull { it.first == "abi" }?.second
+            val suffix = when {
+                variant.buildType == "release" && abi == "arm64" -> "release_arm64-v8a"
+                variant.buildType == "release" && abi == "arm32" -> "release_armeabi-v7a"
+                else -> variant.buildType
+            }
+            output.outputFileName.set("${appName}_v${versionName}_${suffix}.apk")
         }
     }
 }

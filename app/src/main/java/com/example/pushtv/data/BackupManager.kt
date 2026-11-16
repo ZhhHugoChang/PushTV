@@ -1,6 +1,7 @@
 package com.example.pushtv.data
 
 import android.content.Context
+import com.example.pushtv.logging.AppLog
 import com.example.pushtv.network.WebDavClient
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -83,6 +84,8 @@ object BackupManager {
         }
         if (targetApps.isEmpty()) return
 
+        AppLog.info("WebDAVBackup", "Backup queued: count=${targetApps.size}, skipExisting=$skipBackedUp")
+
         for (app in targetApps) {
             val alreadyQueued = taskQueue.any { it.type == BackupTaskType.UPLOAD && it.packageName == app.packageName }
             if (!alreadyQueued) {
@@ -106,6 +109,8 @@ object BackupManager {
 
     fun enqueueRestore(context: Context, apps: List<BackupAppItem>, isSingleAppRestore: Boolean = false) {
         if (apps.isEmpty()) return
+
+        AppLog.info("WebDAVRestore", "Restore queued: count=${apps.size}, single=$isSingleAppRestore")
 
         for (app in apps) {
             val remoteFileName = app.remoteFileName ?: run {
@@ -131,6 +136,8 @@ object BackupManager {
 
     fun enqueueRestoreCloud(context: Context, items: List<CloudApkItem>, isSingleAppRestore: Boolean = false) {
         if (items.isEmpty()) return
+
+        AppLog.info("WebDAVRestore", "Cloud restore queued: count=${items.size}, single=$isSingleAppRestore")
 
         for (item in items) {
             val alreadyQueued = taskQueue.any { it.type == BackupTaskType.DOWNLOAD && it.remoteFileName == item.fileName }
@@ -181,10 +188,18 @@ object BackupManager {
                 var lastTaskType = BackupTaskType.UPLOAD
                 var uploadDirectoryChecked = false
                 var uploadDirectoryError: Throwable? = null
+                val batchStartedAt = System.currentTimeMillis()
+                var processedCount = 0
+                var successCount = 0
+                var failedCount = 0
+                var queueCanceled = false
                 try {
                     val config = SettingsRepo.getWebDavConfig(context)
                     if (!config.isConfigured) {
                         _lastError.value = "WebDAV 尚未配置"
+                        failedCount = taskQueue.size
+                        processedCount = failedCount
+                        AppLog.warn("WebDAVQueue", "Queue stopped: WebDAV is not configured, pending=$failedCount")
                         taskQueue.clear()
                         return@launch
                     }
@@ -199,9 +214,21 @@ object BackupManager {
 
                         when (task.type) {
                             BackupTaskType.UPLOAD -> {
-                                val sourceDir = task.localSourceDir ?: continue
+                                val taskStartedAt = System.currentTimeMillis()
+                                val sourceDir = task.localSourceDir
+                                if (sourceDir == null) {
+                                    processedCount++
+                                    failedCount++
+                                    AppLog.warn("WebDAVBackup", "Backup skipped: missing source path for ${task.packageName}")
+                                    continue
+                                }
                                 val localFile = File(sourceDir)
-                                if (!localFile.exists()) continue
+                                if (!localFile.exists()) {
+                                    processedCount++
+                                    failedCount++
+                                    AppLog.warn("WebDAVBackup", "Backup failed: source file missing for ${task.packageName}")
+                                    continue
+                                }
 
                                 if (!uploadDirectoryChecked) {
                                     uploadDirectoryChecked = true
@@ -209,8 +236,16 @@ object BackupManager {
                                 }
                                 uploadDirectoryError?.let { error ->
                                     _lastError.value = "准备 WebDAV 目录失败: ${error.message}"
+                                    processedCount++
+                                    failedCount++
+                                    AppLog.error("WebDAVBackup", "Backup failed while preparing remote directory", error)
                                     continue
                                 }
+
+                                AppLog.info(
+                                    "WebDAVBackup",
+                                    "Backup started: ${task.appName} (${task.packageName}), file=${task.remoteFileName}, bytes=${localFile.length()}"
+                                )
 
                                 _activeProgress.value = BackupProgress(
                                     type = BackupTaskType.UPLOAD,
@@ -238,15 +273,30 @@ object BackupManager {
 
                                 if (uploadResult.isFailure) {
                                     _lastError.value = "上传 ${task.appName} 失败: ${uploadResult.exceptionOrNull()?.message}"
+                                    failedCount++
+                                    AppLog.error("WebDAVBackup", "Backup failed: ${task.packageName}", uploadResult.exceptionOrNull())
+                                } else {
+                                    successCount++
+                                    AppLog.info(
+                                        "WebDAVBackup",
+                                        "Backup completed: ${task.packageName}, bytes=${localFile.length()}, durationMs=${System.currentTimeMillis() - taskStartedAt}"
+                                    )
                                 }
+                                processedCount++
                             }
                             BackupTaskType.DOWNLOAD -> {
+                                val taskStartedAt = System.currentTimeMillis()
                                 val incomingDir = File(context.cacheDir, "incoming")
                                 if (!incomingDir.exists()) incomingDir.mkdirs()
 
                                 // 使用 .part 临时文件写入，避免 cleanIncomingCache() 竞争删除 (CRASH-11)
                                 val partFile = File(incomingDir, ".${task.remoteFileName}.part")
                                 val destFile = File(incomingDir, task.remoteFileName)
+
+                                AppLog.info(
+                                    "WebDAVRestore",
+                                    "Restore started: ${task.appName} (${task.packageName}), file=${task.remoteFileName}"
+                                )
 
                                 _activeProgress.value = BackupProgress(
                                     type = BackupTaskType.DOWNLOAD,
@@ -274,30 +324,47 @@ object BackupManager {
 
                                 partFile.delete() // 清理残留 .part 文件
                                 if (downloadResult.isSuccess) {
+                                    successCount++
+                                    AppLog.info(
+                                        "WebDAVRestore",
+                                        "Restore downloaded: ${task.packageName}, file=${destFile.name}, bytes=${destFile.length()}, durationMs=${System.currentTimeMillis() - taskStartedAt}"
+                                    )
                                     if (task.isSingleAppRestore) {
                                         pendingSingleInstalls.add(destFile)
                                     }
                                 } else {
                                     _lastError.value = "下载 ${task.appName} 失败: ${downloadResult.exceptionOrNull()?.message}"
+                                    failedCount++
+                                    AppLog.error("WebDAVRestore", "Restore failed: ${task.packageName}", downloadResult.exceptionOrNull())
                                 }
+                                processedCount++
                             }
                         }
                     }
                 } catch (e: CancellationException) {
+                    queueCanceled = true
                     taskQueue.clear()
                     pendingSingleInstalls.clear()
+                    AppLog.warn("WebDAVQueue", "Queue canceled: processed=$processedCount, success=$successCount, failed=$failedCount")
                 } catch (e: Exception) {
                     val isCanceled = e is java.io.IOException && e.message?.contains("Canceled", ignoreCase = true) == true
                     if (isCanceled) {
+                        queueCanceled = true
                         taskQueue.clear()
                         pendingSingleInstalls.clear()
+                        AppLog.warn("WebDAVQueue", "Queue canceled by network client: processed=$processedCount")
                     } else {
                         _lastError.value = "任务异常: ${e.message}"
                         _webDavStatus.value = WebDavStatus.OFFLINE
+                        AppLog.error("WebDAVQueue", "Queue failed after $processedCount operations", e)
                     }
                 } finally {
                     _activeProgress.value = null
-                    if (isActive) {
+                    if (isActive && !queueCanceled) {
+                        AppLog.info(
+                            "WebDAVQueue",
+                            "Queue completed: processed=$processedCount, success=$successCount, failed=$failedCount, durationMs=${System.currentTimeMillis() - batchStartedAt}"
+                        )
                         _taskCompletedEvent.tryEmit(lastTaskType) // CRASH-07: 发出实际任务类型
                         if (pendingSingleInstalls.isNotEmpty()) {
                             val files = pendingSingleInstalls.toList()
@@ -314,6 +381,7 @@ object BackupManager {
 
 
     fun cancelCurrentTask() {
+        AppLog.warn("WebDAVQueue", "Queue cancellation requested: pending=${taskQueue.size}")
         taskQueue.clear()
         pendingSingleInstalls.clear()
         _activeProgress.value = null

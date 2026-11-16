@@ -18,6 +18,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import com.example.pushtv.utils.Events
+import com.example.pushtv.logging.AppLog
 
 class MainActivity : ComponentActivity() {
 
@@ -34,14 +35,19 @@ class MainActivity : ComponentActivity() {
                     // isReplacing 为 true 表示是覆盖安装前的卸载，不提示
                     val isReplacing = intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)
                     if (!isReplacing) {
+                        AppLog.info("Package", "Application uninstalled: ${packageName.orEmpty()}")
                         android.widget.Toast.makeText(applicationContext, "应用已卸载", android.widget.Toast.LENGTH_SHORT).show()
                     }
                 }
                 Intent.ACTION_PACKAGE_ADDED -> {
                     val isReplacing = intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)
                     if (!isReplacing) {
+                        AppLog.info("Package", "Application installed: ${packageName.orEmpty()}")
                         android.widget.Toast.makeText(applicationContext, "应用安装成功", android.widget.Toast.LENGTH_SHORT).show()
                     }
+                }
+                Intent.ACTION_PACKAGE_REPLACED -> {
+                    AppLog.info("Package", "Application updated: ${packageName.orEmpty()}")
                 }
             }
         }
@@ -50,6 +56,7 @@ class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalTvMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AppLog.info("MainActivity", "Activity created")
         
         // 注册应用安装/卸载监听
         val filter = IntentFilter().apply {
@@ -62,6 +69,7 @@ class MainActivity : ComponentActivity() {
         
         // 启动后台局域网服务器
         startService(android.content.Intent(this, com.example.pushtv.network.NetworkService::class.java))
+        AppLog.info("MainActivity", "Network service start requested")
         
         setContent {
             PushTVTheme {
@@ -78,6 +86,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        AppLog.info("MainActivity", "Activity destroyed; finishing=$isFinishing")
         super.onDestroy()
         unregisterReceiver(packageReceiver)
     }

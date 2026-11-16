@@ -1,5 +1,7 @@
 package com.example.pushtv.ui.home
 
+import com.example.pushtv.logging.AppLog
+
 import android.app.Application
 import android.content.Context
 import android.content.pm.PackageManager
@@ -355,7 +357,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            AppLog.error("Network", "Could not determine local IPv4 address", e)
         }
         return "未知IP"
     }
