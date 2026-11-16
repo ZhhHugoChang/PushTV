@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONObject
 import java.io.File
+import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -30,6 +31,7 @@ object AppLog {
     private val _entriesFlow = MutableStateFlow<List<AppLogEntry>>(emptyList())
     private val _remoteAccessEnabled = MutableStateFlow(false)
     private var logFile: File? = null
+    private var pendingCrashFile: File? = null
     private var persistedLineCount = 0
     private var initialized = false
 
@@ -41,10 +43,17 @@ object AppLog {
             if (initialized) return
             val directory = File(context.filesDir, "diagnostics").apply { mkdirs() }
             logFile = File(directory, "pushtv-log.jsonl")
+            pendingCrashFile = File(directory, "pending-crash.txt")
             loadEntriesLocked()
             initialized = true
         }
+        val exportedPath = pendingCrashFile?.let { pending ->
+            CrashReportExporter.exportPending(context, pending)?.also { pending.delete() }
+        }
         info("Application", "PushTV process started")
+        if (exportedPath != null) {
+            info("CrashReport", "Previous crash report exported to $exportedPath")
+        }
     }
 
     fun setRemoteAccessEnabled(enabled: Boolean) {
@@ -58,6 +67,21 @@ object AppLog {
     fun error(tag: String, message: String, throwable: Throwable? = null) {
         val detail = throwable?.stackTraceToString()?.let { "\n$it" }.orEmpty()
         append(AppLogLevel.ERROR, tag, (message + detail).take(24_000))
+    }
+
+    fun recordFatalCrash(threadName: String, throwable: Throwable) {
+        error("UncaughtException", "Fatal crash on thread $threadName", throwable)
+        synchronized(lock) {
+            val file = pendingCrashFile ?: return
+            runCatching {
+                val bytes = exportTextLocked().toByteArray(Charsets.UTF_8)
+                FileOutputStream(file, false).use { output ->
+                    output.write(bytes)
+                    output.flush()
+                    output.fd.sync()
+                }
+            }
+        }
     }
 
     fun snapshot(afterId: Long? = null): List<AppLogEntry> = synchronized(lock) {
@@ -74,8 +98,12 @@ object AppLog {
     }
 
     fun exportText(): String {
+        return synchronized(lock) { exportTextLocked() }
+    }
+
+    private fun exportTextLocked(): String {
         val formatter = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault())
-        return snapshot().joinToString("\n") { entry ->
+        return entries.joinToString("\n") { entry ->
             "${formatter.format(Date(entry.timestamp))} ${entry.level.name.padEnd(5)} ${entry.tag}: ${entry.message}"
         }
     }

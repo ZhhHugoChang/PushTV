@@ -11,7 +11,7 @@ class PushTVApplication : Application() {
 
         val previousHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
-            AppLog.error("UncaughtException", "Fatal crash on thread ${thread.name}", throwable)
+            AppLog.recordFatalCrash(thread.name, throwable)
             if (previousHandler != null) {
                 previousHandler.uncaughtException(thread, throwable)
             } else {

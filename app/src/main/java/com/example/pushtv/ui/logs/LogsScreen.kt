@@ -107,7 +107,11 @@ fun LogsScreen(onNavigateBack: () -> Unit) {
 
         Spacer(Modifier.height(10.dp))
         Text(
-            if (remoteEnabled) "手机端已可查看和下载；电视重启后会自动关闭。" else "远程查看默认关闭。如需手机查看，请在电视上临时开启。",
+            if (remoteEnabled) {
+                "手机端已可查看和下载；崩溃报告会自动保存到 Download/PushTV。"
+            } else {
+                "崩溃报告自动保存到 Download/PushTV；手机远程查看默认关闭。"
+            },
             color = if (remoteEnabled) PushTVColors.Success else PushTVColors.TextMuted,
             fontSize = 13.sp
         )
