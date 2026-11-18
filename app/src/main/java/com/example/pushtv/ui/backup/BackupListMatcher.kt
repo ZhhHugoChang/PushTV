@@ -123,7 +123,9 @@ internal object BackupListMatcher {
     private inline fun <T> firstBy(items: List<T>, keySelector: (T) -> String?): Map<String, T> {
         return buildMap {
             items.forEach { item ->
-                keySelector(item)?.let { key -> putIfAbsent(key, item) }
+                keySelector(item)?.let { key ->
+                    if (!containsKey(key)) put(key, item)
+                }
             }
         }
     }

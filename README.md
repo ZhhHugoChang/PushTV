@@ -42,7 +42,10 @@
 
 ## 🚀 快速开始
 
-1.  **安装应用**：使用 Android Studio 编译或直接安装 Release APK 到 Android TV / 电视盒子（支持 Android 9.0+，API 28+）。
+1.  **安装应用**：根据系统版本和 CPU 架构选择安装包：
+    *   `legacy armeabi-v7a`：Android 6.0–8.1（API 23–27）的 32 位 ARM 兼容版。
+    *   `armeabi-v7a`：Android 9.0+ 的 32 位 ARM 版。
+    *   `arm64-v8a`：Android 9.0+ 的 64 位 ARM 版，现代电视优先选择。
 2.  **无线传包**：打开 PushTV，手机/电脑扫码或输入大屏上的 IP 地址（如 `http://192.168.1.5:8899`），即可无线推流 APK。
 3.  **云端备份**：在电视主页进入「备份与恢复」，配置您的 WebDAV 服务器地址与账号，即可畅享大屏云备份与一键跨设备恢复。
 4.  **自动更新**：在 Web 端切换到“应用管理”，为常用软件填入 GitHub 仓库（如 `owner/repo`），电视端点击“检测更新”即可大屏升级。

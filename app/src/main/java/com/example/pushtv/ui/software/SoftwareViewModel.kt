@@ -10,6 +10,7 @@ import com.example.pushtv.data.SettingsRepo
 import com.example.pushtv.data.TransferManager
 import com.example.pushtv.network.ProgressUpdateLimiter
 import com.example.pushtv.utils.Events
+import com.example.pushtv.utils.CompatibleFileMover
 import com.example.pushtv.utils.VersionComparator
 import io.ktor.client.*
 import io.ktor.client.engine.okhttp.*
@@ -25,9 +26,6 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import java.io.File
-import java.nio.file.AtomicMoveNotSupportedException
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 import java.util.concurrent.ConcurrentHashMap
 import java.util.zip.ZipFile
 
@@ -599,16 +597,7 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
     }.getOrDefault(false)
 
     private fun moveCompletedDownload(source: File, destination: File) {
-        try {
-            Files.move(
-                source.toPath(),
-                destination.toPath(),
-                StandardCopyOption.ATOMIC_MOVE,
-                StandardCopyOption.REPLACE_EXISTING
-            )
-        } catch (_: AtomicMoveNotSupportedException) {
-            Files.move(source.toPath(), destination.toPath(), StandardCopyOption.REPLACE_EXISTING)
-        }
+        CompatibleFileMover.moveReplacing(source, destination)
     }
 
     private suspend fun resolveDownloadUrl(inputUrl: String): String {

@@ -19,6 +19,8 @@ android {
     productFlavors {
         create("universal") {
             dimension = "abi"
+            // Debug-only variant used to exercise the Legacy code path on x86 API 23 emulators.
+            minSdk = 23
         }
         create("arm64") {
             dimension = "abi"
@@ -26,6 +28,12 @@ android {
         }
         create("arm32") {
             dimension = "abi"
+            ndk { abiFilters += "armeabi-v7a" }
+        }
+        create("legacyArm32") {
+            dimension = "abi"
+            minSdk = 23
+            versionNameSuffix = "-legacy"
             ndk { abiFilters += "armeabi-v7a" }
         }
     }
@@ -114,6 +122,7 @@ androidComponents {
             val suffix = when {
                 variant.buildType == "release" && abi == "arm64" -> "release_arm64-v8a"
                 variant.buildType == "release" && abi == "arm32" -> "release_armeabi-v7a"
+                variant.buildType == "release" && abi == "legacyArm32" -> "release_armeabi-v7a"
                 else -> variant.buildType
             }
             output.outputFileName.set("${appName}_v${versionName}_${suffix}.apk")

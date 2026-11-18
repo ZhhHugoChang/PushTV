@@ -16,6 +16,7 @@ import com.example.pushtv.data.BackupAppItem
 import com.example.pushtv.data.WebDavConfig
 import com.example.pushtv.network.WebDavClient
 import com.example.pushtv.logging.AppLog
+import com.example.pushtv.utils.CompatibleFileMover
 import io.ktor.server.application.*
 import io.ktor.server.engine.*
 import io.ktor.server.netty.*
@@ -36,9 +37,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.InputStream
 import java.io.File
-import java.nio.file.AtomicMoveNotSupportedException
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 import java.util.UUID
 import java.util.zip.ZipFile
 
@@ -446,16 +444,7 @@ class NetworkService : Service() {
     }.getOrDefault(false)
 
     private fun moveCompletedFile(source: File, destination: File) {
-        try {
-            Files.move(
-                source.toPath(),
-                destination.toPath(),
-                StandardCopyOption.ATOMIC_MOVE,
-                StandardCopyOption.REPLACE_EXISTING
-            )
-        } catch (_: AtomicMoveNotSupportedException) {
-            Files.move(source.toPath(), destination.toPath(), StandardCopyOption.REPLACE_EXISTING)
-        }
+        CompatibleFileMover.moveReplacing(source, destination)
     }
 
     private fun triggerInstallation(apkFile: File) {

@@ -133,7 +133,7 @@ object AppLog {
             decoded.takeLast(MAX_ENTRIES).forEach(entries::addLast)
         }
         val highestId = entries.maxOfOrNull(AppLogEntry::id) ?: return
-        nextId.updateAndGet { current -> maxOf(current, highestId) }
+        if (highestId > nextId.get()) nextId.set(highestId)
         publishLocked()
     }
 
