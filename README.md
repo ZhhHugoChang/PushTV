@@ -1,4 +1,5 @@
-# PushTV 📺
+![PushTV 应用图标](./app/src/main/res/mipmap-xhdpi/ic_launcher.webp)
+# PushTV
 
 **PushTV** 是一款全 AI 构建、专为 Android TV 打造的极速大屏工具箱。它集成了局域网无线文件闪传、WebDAV 云端网盘备份与恢复、智能应用管理、GitHub 自动版本追踪与更新等功能，彻底解决电视端输入难、安装 App 麻烦、跨设备软件管理繁琐等痛点。
 
