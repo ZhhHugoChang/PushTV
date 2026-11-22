@@ -54,16 +54,23 @@
             border: 1px solid var(--border);
         }
         .tab {
-            padding: 8px 24px;
+            display: grid;
+            place-items: center;
+            min-width: 64px;
+            min-height: 44px;
+            padding: 0 16px;
+            border: 0;
             border-radius: 10px;
+            background: transparent;
             cursor: pointer;
+            touch-action: manipulation;
             transition: 0.3s;
             color: #94a3b8;
-            font-weight: 600;
-            white-space: nowrap;
-            user-select: none;
             -webkit-tap-highlight-color: transparent;
         }
+        .tab svg { width: 22px; height: 22px; }
+        .tab:hover { color: #e2e8f0; }
+        .tab:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
         .tab.active { background: var(--primary); color: white; box-shadow: 0 0 20px rgba(56, 189, 248, 0.4); }
 
         .section { display: none; opacity: 0; transform: translateY(10px); transition: 0.4s; }
@@ -86,6 +93,36 @@
         .logs-empty { color: #64748b; text-align: center; padding: 80px 20px; }
         .logs-notice { display: none; position: sticky; bottom: 12px; width: max-content; margin: 0 auto; border: 1px solid var(--primary); background: #0f172a; color: #e0f2fe; border-radius: 999px; padding: 8px 14px; cursor: pointer; }
         .logs-notice.visible { display: block; }
+
+        @media (max-width: 600px) {
+            .logs-toolbar { padding: 12px; gap: 8px; }
+            .logs-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); width: 100%; }
+            .logs-actions .btn { min-width: 0; padding-inline: 4px; }
+            .logs-viewport { height: clamp(240px, 56vh, 520px); padding: 8px; }
+            .log-row { grid-template-columns: max-content minmax(0, 1fr); gap: 3px 10px; }
+            .log-message { grid-column: 1 / -1; }
+        }
+
+        @media (max-width: 600px) and (min-height: 450px) {
+            .showing-logs .container {
+                display: flex;
+                flex-direction: column;
+                box-sizing: border-box;
+                height: 100vh;
+                height: 100dvh;
+                padding-block: 12px;
+            }
+            .showing-logs header, .showing-logs footer { display: none; }
+            .showing-logs .tabs-container { flex: none; margin-bottom: 12px; }
+            #logs-section.active, .logs-card {
+                display: flex;
+                flex: 1;
+                flex-direction: column;
+                min-height: 0;
+            }
+            .logs-toolbar { flex: none; }
+            .logs-viewport { flex: 1; min-height: 0; height: auto; }
+        }
 
         /* 发光卡片设计 */
         .app-card, .drop-zone, .mirror-section, .search-container {
@@ -310,6 +347,56 @@
         }
         .github-token-row .url-input { margin-bottom: 0; }
         .github-token-row .btn { height: 42px; }
+        .github-proxy .github-token-title { cursor: pointer; min-height: 44px; justify-content: flex-start; gap: 10px; }
+        .github-proxy .github-token-title::after { content: '›'; font-size: 1.3em; flex: none; }
+        .github-proxy[open] .github-token-title::after { transform: rotate(90deg); }
+        .github-proxy .github-token-status { margin-inline-start: auto; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: end; }
+        .github-proxy fieldset { min-width: 0; padding: 0; border: 0; margin: 0; }
+        .github-proxy label { display: block; margin: 0 0 6px; }
+        .github-proxy .url-input { min-height: 44px; }
+        .github-proxy .btn { min-height: 44px; }
+        .github-proxy-picker { position: relative; margin-bottom: 12px; }
+        .github-proxy-picker-trigger, .github-proxy-picker-option {
+            display: flex; align-items: center; justify-content: space-between; gap: 12px;
+            width: 100%; text-align: start; font: inherit; color: #e2e8f0; cursor: pointer;
+        }
+        .github-proxy-picker-trigger { margin-bottom: 0; font-size: 0.9rem; }
+        .github-proxy-picker-trigger:disabled { cursor: default; }
+        .github-proxy-picker-trigger::after {
+            content: ''; flex: none; width: 6px; height: 6px;
+            border: solid #94a3b8; border-width: 0 2px 2px 0; transform: rotate(45deg);
+        }
+        .github-proxy-picker-trigger[aria-expanded="true"]::after { transform: rotate(225deg); }
+        .github-proxy-picker-value, .github-proxy-picker-name {
+            min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .github-proxy-picker-menu {
+            position: absolute; z-index: 2; inset: calc(100% + 4px) 0 auto;
+            max-height: min(19rem, 45vh); overflow-y: auto; overscroll-behavior: contain;
+            padding: 5px; border: 1px solid var(--border); border-radius: 12px;
+            background: var(--bg-end); color-scheme: dark; box-shadow: 0 12px 30px #020617b3;
+        }
+        .github-proxy-picker-option {
+            min-height: 44px; padding: 8px 12px; border: 0; border-radius: 8px; background: transparent;
+        }
+        .github-proxy-picker-option[aria-selected="true"] { background: #16405b; color: #f8fafc; }
+        .github-proxy-picker-option:hover { background: #1e293b; }
+        .github-proxy-picker-trigger:focus-visible, .github-proxy-picker-option:focus-visible {
+            outline: 2px solid var(--primary); outline-offset: -2px;
+        }
+        .github-proxy-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+        .github-proxy-list { list-style: none; padding: 0; margin: 12px 0; }
+        .github-proxy-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 0; }
+        .github-proxy-node-name { flex: 1 1 125px; overflow-wrap: anywhere; }
+        .github-proxy-measurement { color: #94a3b8; font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .github-proxy-measurement[data-tone="fast"] { color: #6ee7b7; }
+        .github-proxy-measurement[data-tone="moderate"] { color: #7dd3fc; }
+        .github-proxy-measurement[data-tone="slow"] { color: #fde68a; }
+        .github-proxy-measurement[data-tone="timeout"] { color: #fdba74; }
+        .github-proxy-measurement[data-tone="unavailable"] { color: #fda4af; }
+        .github-proxy-node-actions { display: flex; gap: 8px; }
+        .github-proxy-editor { margin-top: 12px; }
+        .github-proxy [role="status"] { overflow-wrap: anywhere; }
 
         @media (max-width: 480px) {
             .search-container { gap: 6px; }
@@ -392,6 +479,16 @@
         .btn-primary:hover { background: #0284c7; }
         .btn-secondary { background: rgba(255,255,255,0.08); color: #f1f5f9; }
         .btn-secondary:hover { background: rgba(255,255,255,0.15); }
+        .logs-actions .btn {
+            min-height: 44px;
+            border: 1px solid #657791;
+            background: #243247;
+            color: #f8fafc;
+        }
+        .logs-actions .btn:hover { background: #344660; }
+        .logs-actions .btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+        .logs-actions .logs-clear { border-color: #a66878; background: #392430; color: #fecdd3; }
+        .logs-actions .logs-clear:hover { background: #50303e; }
         .backup-bar {
             display: flex;
             justify-content: space-between;
@@ -438,11 +535,8 @@
             .tab {
                 flex: 1 1 0;
                 min-width: 0;
-                padding: 10px 4px;
+                padding: 0 4px;
                 border-radius: 9px;
-                font-size: 0.88rem;
-                text-align: center;
-                white-space: nowrap;
             }
             .search-container {
                 flex-direction: column;
@@ -497,12 +591,20 @@
         </header>
 
         <div class="tabs-container">
-            <div class="tabs">
-                <div class="tab active" onclick="showSection('upload', this)">文件传输</div>
-                <div class="tab" onclick="showSection('apps', this)">更新管理</div>
-                <div class="tab" onclick="showSection('webdav', this)">WebDAV</div>
-                <div class="tab" onclick="showSection('logs', this)">诊断日志</div>
-            </div>
+            <nav class="tabs" aria-label="PushTV 功能">
+                <button type="button" class="tab active" aria-label="文件传输" title="文件传输" aria-pressed="true" aria-controls="upload-section" onclick="showSection('upload', this)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3m-4 4 4-4 4 4M4 15v5a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-5"/></svg>
+                </button>
+                <button type="button" class="tab" aria-label="更新管理" title="更新管理" aria-pressed="false" aria-controls="apps-section" onclick="showSection('apps', this)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7v5h-5m5 0a8 8 0 1 0-2.3 5.7"/></svg>
+                </button>
+                <button type="button" class="tab" aria-label="WebDAV" title="WebDAV" aria-pressed="false" aria-controls="webdav-section" onclick="showSection('webdav', this)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 18a4 4 0 0 1-.9-7.9 6 6 0 0 1 11.7-1.6A4.8 4.8 0 0 1 17 18H6Z"/></svg>
+                </button>
+                <button type="button" class="tab" aria-label="诊断日志" title="诊断日志" aria-pressed="false" aria-controls="logs-section" onclick="showSection('logs', this)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6m-6 4h6m-6 4h4"/></svg>
+                </button>
+            </nav>
         </div>
 
         <div id="upload-section" class="section active">
@@ -529,6 +631,45 @@
                     <button id="clearGitHubTokenButton" class="btn btn-secondary" onclick="clearGitHubToken()">清除</button>
                 </div>
             </div>
+            <details id="githubProxyPanel" class="github-token-card github-proxy">
+                <summary class="github-token-title">
+                    <span>GitHub 下载代理</span>
+                    <span id="githubProxyCurrent" class="github-token-status"></span>
+                </summary>
+                <p class="github-token-help">仅用于 GitHub Release 的 APK 下载。自动模式同时探测直连、内置及自定义节点，使用最先返回有效 APK 响应的线路。</p>
+                <fieldset id="githubProxyControls" disabled>
+                    <label id="githubProxyModeLabel" for="githubProxyMode">下载线路</label>
+                    <div id="githubProxyPicker" class="github-proxy-picker">
+                        <button type="button" id="githubProxyMode" class="url-input github-proxy-picker-trigger"
+                            aria-haspopup="listbox" aria-expanded="false" aria-controls="githubProxyMenu"
+                            aria-labelledby="githubProxyModeLabel githubProxyModeValue">
+                            <span id="githubProxyModeValue" class="github-proxy-picker-value">直连</span>
+                        </button>
+                        <div id="githubProxyMenu" class="github-proxy-picker-menu" role="listbox"
+                            aria-labelledby="githubProxyModeLabel" hidden></div>
+                    </div>
+                    <div class="github-proxy-actions">
+                        <button type="button" id="githubProxyProbe" class="btn btn-secondary">测速</button>
+                        <button type="button" id="githubProxyAdd" class="btn btn-secondary">添加自定义节点</button>
+                    </div>
+                    <ul id="githubProxyNodes" class="github-proxy-list" aria-label="代理节点"></ul>
+                    <form id="githubProxyEditor" class="github-proxy-editor" hidden>
+                        <label for="githubProxyName">节点名称</label>
+                        <input id="githubProxyName" class="url-input" maxlength="40" required>
+                        <label for="githubProxyPrefix">HTTPS 代理前缀</label>
+                        <input id="githubProxyPrefix" class="url-input" type="url" maxlength="300" required
+                            placeholder="https://proxy.example.com/" aria-describedby="githubProxyHint"
+                            autocapitalize="none" spellcheck="false">
+                        <p id="githubProxyHint" class="github-token-help">PushTV 会在此前缀后拼接 GitHub APK 下载链接。请输入 HTTPS 代理域名。</p>
+                        <div class="github-proxy-actions">
+                            <button type="submit" class="btn btn-primary">保存节点</button>
+                            <button type="button" id="githubProxyTest" class="btn btn-secondary">测试节点</button>
+                            <button type="button" id="githubProxyCancel" class="btn btn-secondary">取消</button>
+                        </div>
+                    </form>
+                </fieldset>
+                <p id="githubProxyStatus" class="github-token-help" role="status"></p>
+            </details>
             <div class="search-container">
                 <input type="text" id="appSearch" class="search-input" placeholder="搜索应用名称或包名..." oninput="filterApps()">
                 <button id="systemToggle" class="toggle-btn active" onclick="toggleSystemApps()">隐藏系统应用</button>
@@ -599,7 +740,7 @@
                     <div class="logs-actions">
                         <button class="btn btn-secondary" onclick="refreshLogs(true)">刷新</button>
                         <button class="btn btn-secondary" onclick="jumpToLatest()">最新</button>
-                        <button class="btn btn-secondary" onclick="clearLogs()">清空</button>
+                        <button class="btn btn-secondary logs-clear" onclick="clearLogs()">清空</button>
                         <button id="downloadLogsButton" class="btn btn-primary" onclick="downloadLogs()" disabled>下载</button>
                     </div>
                 </div>
@@ -615,13 +756,18 @@
 
     <script>
         function showSection(id, clickedTab) {
+            document.body.classList.toggle('showing-logs', id === 'logs');
             document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab').forEach(tab => {
+                const active = tab === clickedTab;
+                tab.classList.toggle('active', active);
+                tab.setAttribute('aria-pressed', String(active));
+            });
             document.getElementById(id + '-section').classList.add('active');
-            clickedTab.classList.add('active');
             if(id === 'apps') {
                 loadApps();
                 loadGitHubTokenConfig();
+                loadGitHubProxy();
             }
             if(id === 'webdav') loadWebDavSection();
             if(id === 'logs') startLogPolling();
@@ -856,6 +1002,212 @@
         // 应用管理逻辑
         let allApps = [];
         let hideSystem = true;
+
+        const proxyField = id => document.getElementById('githubProxy' + id);
+        const proxyModes = { direct: '直连', auto: '自动' };
+        let proxySettings;
+        let editingProxyId = '';
+        let proxyBusy = false;
+
+        function probeLabel(probe) {
+            if (!probe) return '未测速';
+            if (probe.status === 'available') return `${probe.latencyMs} ms`;
+            return probe.status === 'timeout' ? '超时' : '不可用';
+        }
+
+        function probeMeasurement(probe) {
+            const value = document.createElement('span');
+            value.className = 'github-proxy-measurement';
+            value.dataset.tone = probe?.tone || 'untested';
+            value.textContent = probeLabel(probe);
+            return value;
+        }
+
+        function renderGitHubProxy(settings) {
+            proxySettings = settings;
+            const { selection, nodes } = settings;
+            const activeNode = nodes.find(node => node.id === selection);
+            proxyField('Current').textContent = proxyModes[selection] || activeNode?.name || '直连';
+            const currentName = proxyModes[selection] || activeNode?.name || '直连';
+            const modeValue = proxyField('ModeValue');
+            modeValue.replaceChildren(currentName);
+            if (activeNode) modeValue.append(' · ', probeMeasurement(activeNode.probe));
+            const options = [
+                ...Object.entries(proxyModes).map(([id, name]) => ({ id, name })),
+                ...nodes
+            ].map(node => {
+                const option = document.createElement('button');
+                option.type = 'button';
+                option.tabIndex = -1;
+                option.className = 'github-proxy-picker-option';
+                option.setAttribute('role', 'option');
+                option.setAttribute('aria-selected', String(selection === node.id));
+                const label = document.createElement('span');
+                label.className = 'github-proxy-picker-name';
+                label.textContent = node.name;
+                option.append(label);
+                if (!(node.id in proxyModes)) option.append(probeMeasurement(node.probe));
+                option.addEventListener('click', async () => {
+                    closeGitHubProxyPicker();
+                    await updateGitHubProxy({ action: 'select', id: node.id }, '下载线路已同步到电视');
+                    proxyField('Mode').focus();
+                });
+                return option;
+            });
+            proxyField('Menu').replaceChildren(...options);
+            const rows = nodes.map(node => {
+                const row = document.createElement('li');
+                const label = document.createElement('span');
+                label.className = 'github-proxy-node-name';
+                label.textContent = node.name;
+                row.append(label, probeMeasurement(node.probe));
+                if (node.custom) {
+                    const actions = document.createElement('div');
+                    actions.className = 'github-proxy-node-actions';
+                    for (const [text, handler] of [
+                        ['编辑', () => editGitHubProxy(node)],
+                        ['删除', async () => {
+                            const note = selection === node.id ? '删除后将切回直连。' : '';
+                            if (confirm(`删除「${node.name}」？${note}`)) {
+                                await updateGitHubProxy({ action: 'delete', id: node.id }, '节点已删除');
+                                proxyField('Add').focus();
+                            }
+                        }]
+                    ]) {
+                        const button = document.createElement('button');
+                        button.type = 'button';
+                        button.className = 'btn btn-secondary';
+                        button.textContent = text;
+                        button.setAttribute('aria-label', `${text}${node.name}`);
+                        button.addEventListener('click', handler);
+                        actions.append(button);
+                    }
+                    row.append(actions);
+                }
+                return row;
+            });
+            proxyField('Nodes').replaceChildren(...rows);
+        }
+
+        function editGitHubProxy(node) {
+            editingProxyId = node?.id || '';
+            proxyField('Name').value = node?.name || '';
+            proxyField('Prefix').value = node?.prefix || '';
+            proxyField('Editor').hidden = false;
+            proxyField('Name').focus();
+        }
+
+        function closeGitHubProxyEditor() {
+            editingProxyId = '';
+            proxyField('Editor').hidden = true;
+            proxyField('Add').focus();
+        }
+
+        async function updateGitHubProxy(input, successMessage) {
+            if (proxyBusy) return false;
+            proxyBusy = true;
+            proxyField('Controls').disabled = true;
+            proxyField('Status').textContent = ['probe', 'test'].includes(input?.action) ? '正在从电视测试 APK 下载…' : '正在同步…';
+            try {
+                const response = await fetch('/api/github/proxy', input ? {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(input)
+                } : undefined);
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.message || '同步失败');
+                if (input?.action === 'test') {
+                    proxyField('Status').replaceChildren('测试结果：', probeMeasurement(data));
+                } else {
+                    renderGitHubProxy(data);
+                    proxyField('Status').textContent = successMessage;
+                }
+                return true;
+            } catch (error) {
+                proxyField('Status').textContent = error.message || '无法读取或保存代理设置';
+                return false;
+            } finally {
+                proxyBusy = false;
+                proxyField('Controls').disabled = !proxySettings;
+            }
+        }
+
+        function loadGitHubProxy() {
+            return updateGitHubProxy(null, '');
+        }
+
+        function openGitHubProxyPicker() {
+            const menu = proxyField('Menu');
+            if (!menu.firstElementChild) return;
+            menu.hidden = false;
+            proxyField('Mode').setAttribute('aria-expanded', 'true');
+            (menu.querySelector('[aria-selected="true"]') || menu.firstElementChild).focus();
+        }
+
+        function closeGitHubProxyPicker(restoreFocus = false) {
+            proxyField('Menu').hidden = true;
+            proxyField('Mode').setAttribute('aria-expanded', 'false');
+            if (restoreFocus) proxyField('Mode').focus();
+        }
+
+        proxyField('Panel').addEventListener('toggle', () => {
+            if (proxyField('Panel').open) loadGitHubProxy();
+            else closeGitHubProxyPicker();
+        });
+        function toggleGitHubProxyPicker() {
+            if (proxyField('Menu').hidden) openGitHubProxyPicker();
+            else closeGitHubProxyPicker(true);
+        }
+        proxyField('Mode').addEventListener('click', toggleGitHubProxyPicker);
+        proxyField('Mode').addEventListener('keydown', event => {
+            switch (event.key) {
+                case 'Enter':
+                case ' ': toggleGitHubProxyPicker(); break;
+                case 'ArrowDown':
+                case 'ArrowUp': openGitHubProxyPicker(); break;
+                default: return;
+            }
+            event.preventDefault();
+        });
+        proxyField('Menu').addEventListener('keydown', event => {
+            const option = event.target.closest('[role="option"]');
+            if (!option) return;
+            switch (event.key) {
+                case 'ArrowDown': (option.nextElementSibling || option).focus(); break;
+                case 'ArrowUp': (option.previousElementSibling || option).focus(); break;
+                case 'Home': proxyField('Menu').firstElementChild.focus(); break;
+                case 'End': proxyField('Menu').lastElementChild.focus(); break;
+                case 'Escape': closeGitHubProxyPicker(true); break;
+                case 'Enter':
+                case ' ': option.click(); break;
+                default: return;
+            }
+            event.preventDefault();
+        });
+        proxyField('Picker').addEventListener('focusout', event => {
+            if (!proxyField('Picker').contains(event.relatedTarget)) closeGitHubProxyPicker();
+        });
+        document.addEventListener('pointerdown', event => {
+            if (!proxyField('Picker').contains(event.target)) closeGitHubProxyPicker();
+        });
+        proxyField('Probe').addEventListener('click', async () => {
+            await updateGitHubProxy({ action: 'probe' }, '测速完成');
+            proxyField('Probe').focus();
+        });
+        proxyField('Add').addEventListener('click', () => editGitHubProxy());
+        proxyField('Cancel').addEventListener('click', closeGitHubProxyEditor);
+        proxyField('Test').addEventListener('click', async () => {
+            if (!proxyField('Prefix').reportValidity()) return;
+            await updateGitHubProxy({ action: 'test', prefix: proxyField('Prefix').value });
+            proxyField('Test').focus();
+        });
+        proxyField('Editor').addEventListener('submit', async event => {
+            event.preventDefault();
+            if (await updateGitHubProxy({
+                action: 'save', id: editingProxyId, name: proxyField('Name').value,
+                prefix: proxyField('Prefix').value
+            }, '自定义节点已保存')) closeGitHubProxyEditor();
+        });
 
         async function loadGitHubTokenConfig() {
             const status = document.getElementById('githubTokenStatus');

@@ -39,6 +39,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -55,6 +57,7 @@ import com.example.pushtv.data.TransferState
 import com.example.pushtv.ui.software.FilterMode
 import com.example.pushtv.ui.software.InstalledApp
 import com.example.pushtv.ui.software.SoftwareViewModel
+import com.example.pushtv.utils.VersionComparator.Result
 import com.example.pushtv.ui.theme.PushTVColors
 import kotlinx.coroutines.delay
 import androidx.compose.ui.input.key.onPreviewKeyEvent
@@ -97,9 +100,8 @@ fun ActionDrawer(
     }
     val currentDownload by currentDownloadFlow.collectAsStateWithLifecycle(initialValue = null)
 
-    val recommendedAsset = currentApp?.assets?.find { it.isRecommended }
-    val primaryAsset = recommendedAsset ?: currentApp?.assets?.firstOrNull()
-    val otherAssets = currentApp?.assets?.filter { it != primaryAsset } ?: emptyList()
+    val primaryAsset = currentApp?.recommendedUpdateAsset
+    val otherAssets = currentApp?.manualReleaseAssets.orEmpty()
     val hasChangelog = currentApp?.changelog?.isNotBlank() == true
     val actionRequesters = remember(actions.size, drawerFocusRequester) {
         List(actions.size) { index -> if (index == 0) drawerFocusRequester else FocusRequester() }
@@ -131,11 +133,13 @@ fun ActionDrawer(
         TransferState.COMPLETED -> 1
         else -> 2
     }
+    val nextAfterProgress = if (primaryAsset != null) downloadRequester else
+        actionRequesters.firstOrNull() ?: otherAssetRequesters.firstOrNull() ?: FocusRequester.Cancel
     LaunchedEffect(currentDownload?.id, downloadFocusMode) {
         val transfer = currentDownload ?: return@LaunchedEffect
         actionsScrollState.scrollTo(0)
         val requester = if (transfer.state == TransferState.COMPLETED) {
-            downloadRequester
+            nextAfterProgress
         } else {
             progressActionRequester
         }
@@ -156,8 +160,8 @@ fun ActionDrawer(
         modifier = Modifier
             .fillMaxHeight()
             .wrapContentWidth()
-            .focusGroup()
-            .focusProperties { exit = { FocusRequester.Cancel } },
+            .focusProperties { exit = { FocusRequester.Cancel } }
+            .focusGroup(),
         verticalAlignment = Alignment.CenterVertically
     ) {
         // Left Side: Changelog
@@ -200,7 +204,6 @@ fun ActionDrawer(
                             .focusProperties {
                                 right = drawerFocusRequester
                             }
-                            .focusable()
                             .onPreviewKeyEvent {
                                 if (it.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                                 when (it.nativeKeyEvent.keyCode) {
@@ -215,6 +218,8 @@ fun ActionDrawer(
                                     else -> false
                                 }
                             }
+                            .semantics { contentDescription = "更新日志正文" }
+                            .focusable()
                     ) {
                         Box(
                             modifier = Modifier
@@ -251,8 +256,7 @@ fun ActionDrawer(
                         Spacer(modifier = Modifier.height(12.dp))
                         Column(modifier = Modifier.fillMaxWidth()) {
                             Text("当前 ${app.versionName}", style = MaterialTheme.typography.bodySmall, color = PushTVColors.TextSecondary)
-                            val hasUpdate = softwareViewModel?.isVersionDifferent(app.versionName, app.remoteVersion) == true
-                            if (hasUpdate) {
+                            if (app.hasNewRelease) {
                                 Text("最新 ${app.remoteVersion}", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold), color = PushTVColors.Success)
                             } else {
                                 val currentStatus = app.remoteStatus
@@ -260,8 +264,10 @@ fun ActionDrawer(
                                     app.isChecking -> "正在检查..."
                                     currentStatus != "连接成功" -> currentStatus ?: "尚未检测"
                                     app.remoteVersion.isNullOrBlank() -> "未获取到远端版本"
-                                    softwareViewModel?.canCompareVersions(app.versionName, app.remoteVersion) != true ->
+                                    app.releaseVersionOrder == Result.UNKNOWN ->
                                         "版本格式无法比较 (${app.remoteVersion})"
+                                    app.releaseVersionOrder == Result.LOCAL_NEWER ->
+                                        "当前版本高于 GitHub 发布版 (${app.remoteVersion})"
                                     else -> "已是最新 (${app.remoteVersion})"
                                 }
                                 val color = if (
@@ -290,7 +296,8 @@ fun ActionDrawer(
                         DownloadProgress(
                             transfer = transfer,
                             actionFocusRequester = progressActionRequester,
-                            downFocusRequester = downloadRequester,
+                            leftFocusRequester = leftToChangelog,
+                            downFocusRequester = nextAfterProgress,
                             onActionFocusChanged = { isFocused ->
                                 isProgressActionFocused = isFocused
                                 if (isFocused) revealDownloadTop()
@@ -305,7 +312,7 @@ fun ActionDrawer(
 
                     if (primaryAsset != null) {
                         Text(
-                            if (primaryAsset.isRecommended) "推荐升级" else "可用更新",
+                            "推荐升级",
                             style = MaterialTheme.typography.labelMedium,
                             color = PushTVColors.Primary
                         )
@@ -313,7 +320,7 @@ fun ActionDrawer(
                         Surface(
                             onClick = { startDownloadAndFocusTop(primaryAsset.downloadUrl) },
                             colors = ClickableSurfaceDefaults.colors(
-                                containerColor = if (primaryAsset.isRecommended) PushTVColors.Success.copy(alpha = 0.15f) else PushTVColors.TextPrimary.copy(alpha = 0.08f),
+                                containerColor = PushTVColors.Success.copy(alpha = 0.15f),
                                 focusedContainerColor = PushTVColors.Success
                             ),
                             shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(12.dp)),
@@ -367,7 +374,11 @@ fun ActionDrawer(
 
                     actions.forEachIndexed { index, action ->
                         val requester = actionRequesters[index]
-                        val previousRequester = actionRequesters.getOrNull(index - 1) ?: if (primaryAsset != null) downloadRequester else null
+                        val previousRequester = actionRequesters.getOrNull(index - 1) ?: when {
+                            primaryAsset != null -> downloadRequester
+                            downloadFocusMode == 2 -> progressActionRequester
+                            else -> FocusRequester.Cancel
+                        }
                         val nextRequester = actionRequesters.getOrNull(index + 1) ?: otherAssetRequesters.firstOrNull()
                         Surface(
                             onClick = action.onClick,
@@ -382,7 +393,7 @@ fun ActionDrawer(
                                 .focusProperties {
                                     left = leftToChangelog
                                     right = FocusRequester.Cancel
-                                    up = previousRequester ?: FocusRequester.Cancel
+                                    up = previousRequester
                                     down = nextRequester ?: FocusRequester.Cancel
                                 }
                         ) {
@@ -396,7 +407,7 @@ fun ActionDrawer(
 
                     if (otherAssets.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(16.dp))
-                        Text("其他可用版本", style = MaterialTheme.typography.labelMedium, color = PushTVColors.TextSecondary)
+                        Text("最新 Release 安装包", style = MaterialTheme.typography.labelMedium, color = PushTVColors.TextSecondary)
                         otherAssets.forEachIndexed { index, asset ->
                             val requester = otherAssetRequesters[index]
                             val previousRequester = otherAssetRequesters.getOrNull(index - 1) ?: actionRequesters.lastOrNull() ?: if (primaryAsset != null) downloadRequester else null
@@ -418,7 +429,7 @@ fun ActionDrawer(
                                 Row(modifier = Modifier.padding(10.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                     Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(16.dp), tint = PushTVColors.TextSecondary)
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text(asset.name, style = MaterialTheme.typography.bodySmall, color = PushTVColors.TextSecondary, maxLines = 1)
+                                    Text(asset.name, style = MaterialTheme.typography.bodySmall, color = PushTVColors.TextSecondary, maxLines = 2)
                                 }
                             }
                         }
@@ -436,6 +447,7 @@ fun ActionDrawer(
 private fun DownloadProgress(
     transfer: TransferProgress,
     actionFocusRequester: FocusRequester,
+    leftFocusRequester: FocusRequester,
     downFocusRequester: FocusRequester,
     onActionFocusChanged: (Boolean) -> Unit,
     onCancel: () -> Unit,
@@ -477,6 +489,9 @@ private fun DownloadProgress(
                     else -> transfer.fileName
                 }
                 Text(detail, style = MaterialTheme.typography.bodySmall, color = PushTVColors.TextSecondary, maxLines = 1)
+                transfer.route?.let { route ->
+                    Text("线路：$route", style = MaterialTheme.typography.bodySmall, color = PushTVColors.TextSecondary, maxLines = 1)
+                }
             }
             if (transfer.state != TransferState.COMPLETED) {
                 Surface(
@@ -497,7 +512,10 @@ private fun DownloadProgress(
                         .size(36.dp)
                         .focusRequester(actionFocusRequester)
                         .onFocusChanged { onActionFocusChanged(it.isFocused) }
-                        .focusProperties { down = downFocusRequester }
+                        .focusProperties {
+                            left = leftFocusRequester
+                            down = downFocusRequester
+                        }
                 ) {
                     Box(
                         modifier = Modifier.fillMaxSize(),

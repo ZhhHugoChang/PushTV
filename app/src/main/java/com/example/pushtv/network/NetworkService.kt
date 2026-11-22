@@ -190,6 +190,7 @@ class NetworkService : Service() {
                             )
                         }
                     }
+                    githubProxyRoutes(applicationContext)
                     get("/api/github/token") {
                         val configured = SettingsRepo.getGitHubToken(applicationContext).isNotBlank()
                         call.respondText(

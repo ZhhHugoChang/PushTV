@@ -10,11 +10,12 @@ import android.graphics.Canvas
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.net.ConnectivityManager
+import android.net.LinkProperties
 import android.net.Uri
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
-import android.net.wifi.WifiManager
+import android.os.Build
 import android.os.FileObserver
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -28,7 +29,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
-import java.net.NetworkInterface
+import java.net.Inet4Address
 import java.util.concurrent.ConcurrentHashMap
 
 data class ApkInfo(
@@ -43,6 +44,8 @@ data class ApkInfo(
     val canUpdate: Boolean = false
 )
 
+data class LanAccess(val address: String, val qrCode: ImageBitmap? = null)
+
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private data class CachedApkInfo(
         val size: Long,
@@ -55,17 +58,16 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _fileList = MutableStateFlow<List<ApkInfo>>(emptyList())
     val fileList: StateFlow<List<ApkInfo>> = _fileList
 
-    private val _ipAddress = MutableStateFlow("获取中...")
-    val ipAddress: StateFlow<String> = _ipAddress
-
-    private val _qrBitmap = MutableStateFlow<ImageBitmap?>(null)
-    val qrBitmap: StateFlow<ImageBitmap?> = _qrBitmap
+    private val _lanAccess = MutableStateFlow(LanAccess("获取中..."))
+    val lanAccess = _lanAccess.asStateFlow()
 
     private val _storageInfo = MutableStateFlow("检测中...")
     val storageInfo: StateFlow<String> = _storageInfo
 
     private var fileObserver: FileObserver? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private var defaultNetworkCallback: ConnectivityManager.NetworkCallback? = null
+    private var ipRefreshJob: Job? = null
     private var fileRefreshJob: Job? = null
     private val apkInfoCache = ConcurrentHashMap<String, CachedApkInfo>()
 
@@ -84,24 +86,24 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun registerNetworkCallback() {
-        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        networkCallback = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) {
-                // Delay slightly to ensure IP is assigned
-                viewModelScope.launch {
-                    delay(1000)
-                    refreshIpAddress()
-                }
-            }
-
-            override fun onLost(network: Network) {
+        val manager = context.getSystemService(ConnectivityManager::class.java)
+        fun listener() = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) = refreshIpAddress()
+            override fun onLost(network: Network) = refreshIpAddress()
+            override fun onLinkPropertiesChanged(network: Network, linkProperties: LinkProperties) =
                 refreshIpAddress()
-            }
         }
         val request = NetworkRequest.Builder()
-            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+            .addTransportType(NetworkCapabilities.TRANSPORT_ETHERNET)
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
             .build()
-        connectivityManager.registerNetworkCallback(request, networkCallback!!)
+        networkCallback = listener().also { manager.registerNetworkCallback(request, it) }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            defaultNetworkCallback = listener().also {
+                manager.registerDefaultNetworkCallback(it)
+            }
+        }
     }
 
     private fun refreshStorageInfo() {
@@ -116,15 +118,20 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun refreshIpAddress() {
-        viewModelScope.launch(Dispatchers.IO) {
-            val ip = getLocalIpAddress(context)
-            val fullIp = if (ip == "未知IP") ip else "http://$ip:8899"
-            _ipAddress.value = fullIp
-            if (ip != "未知IP") {
-                val installedAt = context.packageManager
-                    .getPackageInfo(context.packageName, 0)
-                    .lastUpdateTime
-                _qrBitmap.value = generateQRCode("$fullIp/?v=$installedAt")
+        viewModelScope.launch {
+            ipRefreshJob?.cancel()
+            ipRefreshJob = launch {
+                val access = withContext(Dispatchers.IO) {
+                    val ip = getLocalIpAddress()
+                    if (ip == null) return@withContext LanAccess("未知IP")
+                    val url = "http://$ip:8899"
+                    if (_lanAccess.value.address == url) return@withContext _lanAccess.value
+                    val installedAt = context.packageManager
+                        .getPackageInfo(context.packageName, 0)
+                        .lastUpdateTime
+                    LanAccess(url, generateQRCode("$url/?v=$installedAt"))
+                }
+                _lanAccess.value = access
             }
         }
     }
@@ -333,33 +340,31 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         return bitmap
     }
 
-    private fun getLocalIpAddress(context: Context): String {
-        try {
-            val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-            val ipAddress = wifiManager.connectionInfo.ipAddress
-            if (ipAddress != 0) {
-                return String.format(
-                    "%d.%d.%d.%d",
-                    ipAddress and 0xff,
-                    ipAddress shr 8 and 0xff,
-                    ipAddress shr 16 and 0xff,
-                    ipAddress shr 24 and 0xff
-                )
-            }
-            val en = NetworkInterface.getNetworkInterfaces()
-            while (en.hasMoreElements()) {
-                val enumIpAddr = en.nextElement().inetAddresses
-                while (enumIpAddr.hasMoreElements()) {
-                    val inetAddress = enumIpAddr.nextElement()
-                    if (!inetAddress.isLoopbackAddress && inetAddress is java.net.Inet4Address) {
-                        return inetAddress.hostAddress ?: ""
-                    }
-                }
+    // A non-default LAN can still be reachable when the default network is a VPN.
+    @Suppress("DEPRECATION")
+    private fun getLocalIpAddress(): String? {
+        return try {
+            val manager = context.getSystemService(ConnectivityManager::class.java)
+            val activeNetwork = manager.activeNetwork
+            val networks = (listOfNotNull(activeNetwork) + manager.allNetworks).distinct()
+            networks.firstNotNullOfOrNull { network ->
+                val capabilities = manager.getNetworkCapabilities(network) ?: return@firstNotNullOfOrNull null
+                val isLan = capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+                    capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+                if (!isLan || !capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN) ||
+                    capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+                ) return@firstNotNullOfOrNull null
+
+                manager.getLinkProperties(network)?.linkAddresses.orEmpty()
+                    .mapNotNull { it.address as? Inet4Address }
+                    .filterNot { it.isAnyLocalAddress || it.isLoopbackAddress || it.isLinkLocalAddress || it.isMulticastAddress }
+                    .maxByOrNull { it.isSiteLocalAddress }
+                    ?.hostAddress
             }
         } catch (e: Exception) {
             AppLog.error("Network", "Could not determine local IPv4 address", e)
+            null
         }
-        return "未知IP"
     }
 
     private fun generateQRCode(content: String, size: Int = 400): ImageBitmap? {
@@ -384,10 +389,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     override fun onCleared() {
         super.onCleared()
         fileObserver?.stopWatching()
-        networkCallback?.let {
-            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-            cm.unregisterNetworkCallback(it)
-        }
+        val manager = context.getSystemService(ConnectivityManager::class.java)
+        networkCallback?.let(manager::unregisterNetworkCallback)
+        defaultNetworkCallback?.let(manager::unregisterNetworkCallback)
     }
 
     companion object {

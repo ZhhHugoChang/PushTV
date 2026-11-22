@@ -21,7 +21,8 @@ data class TransferProgress(
     val progress: Int,
     val state: TransferState = TransferState.QUEUED,
     val totalBytes: Long? = null,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val route: String? = null
 ) {
     val isComplete: Boolean get() = state == TransferState.COMPLETED
     val isActive: Boolean get() = state in ACTIVE_STATES
@@ -51,6 +52,10 @@ object TransferManager {
 
     fun markTransferring(id: String) {
         registry.changeState(id, TransferState.TRANSFERRING)
+    }
+
+    fun startRoute(id: String, route: String) {
+        registry.startRoute(id, route)
     }
 
     fun updateProgress(id: String, fileName: String, progress: Int, totalBytes: Long? = null) {
@@ -90,6 +95,13 @@ internal class TransferRegistry {
 
     fun changeState(id: String, state: TransferState) {
         update(id, state) { it.copy(state = state, errorMessage = null) }
+    }
+
+    fun startRoute(id: String, route: String) {
+        update(id, TransferState.TRANSFERRING) {
+            it.copy(state = TransferState.TRANSFERRING, route = route, progress = 0,
+                totalBytes = null, errorMessage = null)
+        }
     }
 
     @Synchronized

@@ -3,6 +3,9 @@ package com.example.pushtv.ui.logs
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,15 +24,30 @@ import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.VerticalAlignBottom
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -37,10 +55,10 @@ import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Border
 import androidx.tv.material3.Button
 import androidx.tv.material3.ButtonDefaults
-import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
+import androidx.tv.material3.NonInteractiveSurfaceDefaults
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import com.example.pushtv.logging.AppLog
@@ -52,16 +70,27 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-@OptIn(ExperimentalTvMaterial3Api::class)
+@OptIn(ExperimentalTvMaterial3Api::class, ExperimentalComposeUiApi::class)
 @Composable
 fun LogsScreen(onNavigateBack: () -> Unit) {
     val logs by AppLog.entriesFlow.collectAsState()
     val remoteEnabled by AppLog.remoteAccessEnabled.collectAsState()
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
+    val latestFocus = remember { FocusRequester() }
+    val logListFocus = remember { FocusRequester() }
+    var logListFocused by remember { mutableStateOf(false) }
     var clearArmed by remember { mutableStateOf(false) }
+    val enterLogs = Modifier.focusProperties {
+        down = if (logs.isEmpty()) FocusRequester.Cancel else logListFocus
+    }
 
     BackHandler(onBack = onNavigateBack)
+
+    LaunchedEffect(latestFocus) {
+        withFrameNanos { }
+        latestFocus.requestFocus()
+    }
 
     Column(
         modifier = Modifier.fillMaxSize().padding(horizontal = 56.dp, vertical = 36.dp)
@@ -89,19 +118,31 @@ fun LogsScreen(onNavigateBack: () -> Unit) {
                     if (remoteEnabled) "关闭手机查看" else "开启手机查看",
                     Icons.Default.Download,
                     onClick = { AppLog.setRemoteAccessEnabled(!remoteEnabled) },
+                    modifier = enterLogs,
                     accent = if (remoteEnabled) PushTVColors.Success else PushTVColors.Primary
                 )
-                LogActionButton("最新", Icons.Default.VerticalAlignBottom, onClick = {
-                    if (logs.isNotEmpty()) scope.launch { listState.animateScrollToItem(logs.lastIndex) }
-                })
-                LogActionButton(if (clearArmed) "确认清空" else "清空", Icons.Default.DeleteSweep, onClick = {
-                    if (clearArmed) {
-                        AppLog.clear()
-                        clearArmed = false
-                    } else {
-                        clearArmed = true
-                    }
-                }, accent = PushTVColors.Error)
+                LogActionButton(
+                    "最新",
+                    Icons.Default.VerticalAlignBottom,
+                    onClick = {
+                        if (logs.isNotEmpty()) scope.launch { listState.animateScrollToItem(logs.lastIndex) }
+                    },
+                    modifier = Modifier.focusRequester(latestFocus).then(enterLogs)
+                )
+                LogActionButton(
+                    if (clearArmed) "确认清空" else "清空",
+                    Icons.Default.DeleteSweep,
+                    onClick = {
+                        if (clearArmed) {
+                            AppLog.clear()
+                            clearArmed = false
+                        } else {
+                            clearArmed = true
+                        }
+                    },
+                    modifier = enterLogs,
+                    accent = PushTVColors.Error
+                )
             }
         }
 
@@ -127,7 +168,26 @@ fun LogsScreen(onNavigateBack: () -> Unit) {
         } else {
             LazyColumn(
                 state = listState,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize()
+                    .focusRequester(logListFocus)
+                    .onFocusChanged { logListFocused = it.isFocused }
+                    .onPreviewKeyEvent { event ->
+                        val up = event.key == Key.DirectionUp
+                        if (!up && event.key != Key.DirectionDown) return@onPreviewKeyEvent false
+                        if (event.type == KeyEventType.KeyDown) {
+                            if (up && !listState.canScrollBackward) {
+                                latestFocus.requestFocus()
+                            } else {
+                                val step = listState.layoutInfo.viewportSize.height / 3f
+                                scope.launch { listState.scrollBy(if (up) -step else step) }
+                            }
+                        }
+                        true
+                    }
+                    .semantics { contentDescription = "日志列表" }
+                    .focusable()
+                    .border(2.dp, if (logListFocused) PushTVColors.Primary else Color.Transparent, RoundedCornerShape(12.dp))
+                    .padding(2.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(logs, key = AppLogEntry::id) { entry -> LogRow(entry) }
@@ -138,13 +198,25 @@ fun LogsScreen(onNavigateBack: () -> Unit) {
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-private fun LogActionButton(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit, accent: Color = PushTVColors.Primary) {
+private fun LogActionButton(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    accent: Color = PushTVColors.Primary
+) {
+    val defaultContentColor = MaterialTheme.colorScheme.onSurface
     Button(
         onClick = onClick,
+        modifier = modifier,
         scale = ButtonDefaults.scale(focusedScale = 1f),
         colors = ButtonDefaults.colors(
             containerColor = PushTVColors.TextPrimary.copy(alpha = 0.06f),
-            focusedContainerColor = accent
+            focusedContainerColor = accent.copy(alpha = 0.5f).compositeOver(PushTVColors.Surface),
+            contentColor = defaultContentColor,
+            focusedContentColor = defaultContentColor,
+            pressedContentColor = defaultContentColor,
+            disabledContentColor = defaultContentColor
         ),
         border = ButtonDefaults.border(focusedBorder = Border(BorderStroke(2.dp, Color.White), inset = (-1).dp)),
         shape = ButtonDefaults.shape(shape = RoundedCornerShape(12.dp))
@@ -165,18 +237,10 @@ private fun LogRow(entry: AppLogEntry) {
     }
     val time = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date(entry.timestamp))
     Surface(
-        onClick = {},
         modifier = Modifier.fillMaxWidth(),
-        colors = ClickableSurfaceDefaults.colors(
-            containerColor = PushTVColors.Panel,
-            focusedContainerColor = PushTVColors.TextPrimary.copy(alpha = 0.12f)
-        ),
-        border = ClickableSurfaceDefaults.border(
-            border = Border(BorderStroke(1.dp, PushTVColors.TextPrimary.copy(alpha = 0.08f))),
-            focusedBorder = Border(BorderStroke(2.dp, PushTVColors.Primary))
-        ),
-        scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
-        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(12.dp))
+        colors = NonInteractiveSurfaceDefaults.colors(containerColor = PushTVColors.Panel),
+        border = Border(BorderStroke(1.dp, PushTVColors.TextPrimary.copy(alpha = 0.08f))),
+        shape = RoundedCornerShape(12.dp)
     ) {
         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
             Text(time, fontFamily = FontFamily.Monospace, color = PushTVColors.TextMuted, fontSize = 13.sp)

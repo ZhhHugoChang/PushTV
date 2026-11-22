@@ -6,6 +6,10 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import org.json.JSONArray
+import org.json.JSONObject
+import java.util.UUID
 
 val Context.dataStore by preferencesDataStore(name = "software_urls")
 
@@ -23,6 +27,73 @@ object SettingsRepo {
     private val KEY_WEBDAV_PASSWORD = stringPreferencesKey("webdav_password")
     private val KEY_WEBDAV_REMOTE_DIR = stringPreferencesKey("webdav_remote_dir")
     private val KEY_GITHUB_TOKEN = stringPreferencesKey("github_token_encrypted")
+    private val KEY_GITHUB_PROXY = stringPreferencesKey("github_download_proxy")
+
+    fun observeGitHubProxy(context: Context) = context.dataStore.data.map {
+        decodeGitHubProxy(it[KEY_GITHUB_PROXY])
+    }
+
+    suspend fun updateGitHubProxy(context: Context, transform: (GitHubProxySettings) -> GitHubProxySettings) {
+        context.dataStore.edit { preferences ->
+            val settings = transform(decodeGitHubProxy(preferences[KEY_GITHUB_PROXY]))
+            preferences[KEY_GITHUB_PROXY] = JSONObject().apply {
+                put("selection", settings.selection)
+                put("nodes", JSONArray().apply {
+                    settings.customNodes.forEach { node ->
+                        put(JSONObject().put("id", node.id).put("name", node.name)
+                            .put("prefix", node.prefix))
+                    }
+                })
+            }.toString()
+        }
+    }
+
+    suspend fun selectGitHubProxy(context: Context, id: String) = updateGitHubProxy(context) {
+        require(it.hasSelection(id)) { "代理节点不存在" }
+        it.copy(selection = id)
+    }
+
+    suspend fun saveGitHubProxyNode(
+        context: Context, id: String?, name: String, prefix: String
+    ) = updateGitHubProxy(context) { settings ->
+        val label = name.trim()
+        require(label.length in 1..40 && label.none { it.isISOControl() }) { "节点名称须为 1–40 个字符" }
+        val normalized = GitHubProxySettings.normalizePrefix(prefix)
+        val nodes = settings.customNodes
+        val existing = nodes.firstOrNull { it.id == id }
+        require(existing?.prefix == normalized || settings.nodes.none { it.prefix == normalized }) { "此代理地址已存在" }
+        if (id == null) {
+            require(nodes.size < GitHubProxySettings.MAX_CUSTOM_NODES) { "自定义节点已达上限" }
+            settings.copy(customNodes = nodes + GitHubProxyNode(UUID.randomUUID().toString(), label, normalized))
+        } else {
+            require(nodes.any { it.id == id }) { "代理节点不存在" }
+            settings.copy(customNodes = nodes.map {
+                if (it.id == id) it.copy(name = label, prefix = normalized) else it
+            })
+        }
+    }
+
+    suspend fun deleteGitHubProxyNode(context: Context, id: String) = updateGitHubProxy(context) {
+        require(it.customNodes.any { node -> node.id == id }) { "代理节点不存在" }
+        it.copy(
+            selection = if (it.selection == id) GitHubProxySettings.DIRECT else it.selection,
+            customNodes = it.customNodes.filterNot { node -> node.id == id }
+        )
+    }
+
+    private fun decodeGitHubProxy(encoded: String?): GitHubProxySettings {
+        if (encoded == null) return GitHubProxySettings()
+        val json = JSONObject(encoded)
+        val nodes = json.optJSONArray("nodes") ?: JSONArray()
+        val settings = GitHubProxySettings(
+            selection = json.optString("selection", GitHubProxySettings.DIRECT),
+            customNodes = List(nodes.length()) { index ->
+                val node = nodes.getJSONObject(index)
+                GitHubProxyNode(node.getString("id"), node.getString("name"), node.getString("prefix"))
+            }
+        )
+        return if (settings.hasSelection(settings.selection)) settings else settings.copy(selection = GitHubProxySettings.DIRECT)
+    }
 
     private fun getUrlKey(packageName: String) = stringPreferencesKey("$URL_PREFIX$packageName")
     private fun getFavKey(packageName: String) = booleanPreferencesKey("$FAVORITE_PREFIX$packageName")

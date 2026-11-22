@@ -55,6 +55,11 @@ import com.example.pushtv.ui.home.ActionItem
 import com.example.pushtv.ui.home.ConfirmDialog
 import com.example.pushtv.ui.home.installApk
 import com.example.pushtv.ui.theme.PushTVColors
+import com.example.pushtv.ui.theme.TvDialog
+import com.example.pushtv.ui.theme.TvDialogActions
+import com.example.pushtv.ui.theme.TvDialogButton
+import com.example.pushtv.ui.theme.TvDialogMessage
+import com.example.pushtv.ui.theme.TvDialogTitle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -1746,138 +1751,52 @@ private fun DuplicateBackupDialog(
 
     BackHandler(onBack = onDismiss)
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = androidx.compose.ui.window.DialogProperties(
-            dismissOnBackPress = true,
-            dismissOnClickOutside = true,
-            usePlatformDefaultWidth = false
-        )
-    ) {
-        Surface(
-            shape = RoundedCornerShape(24.dp),
-            colors = NonInteractiveSurfaceDefaults.colors(containerColor = PushTVColors.Panel),
-            modifier = Modifier
-                .width(460.dp)
-                .padding(16.dp)
-                .focusGroup()
-                .focusProperties { exit = { FocusRequester.Cancel } }
-        ) {
-            Column(
-                modifier = Modifier.padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = "重复备份提示",
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = PushTVColors.TextPrimary
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                val message = if (totalSelected == 1) {
-                    "该应用在云端已有相同版本的备份。\n请选择操作策略："
-                } else {
-                    "已选 ${totalSelected} 个应用，其中 ${backedUpCount} 个在云端已有相同版本备份。\n请选择备份策略："
-                }
-                Text(
-                    text = message,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = PushTVColors.TextSecondary,
-                    textAlign = TextAlign.Center
-                )
-                Spacer(modifier = Modifier.height(24.dp))
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    // 跳过已备份按钮（默认灰底，选中高亮品牌色）
-                    Button(
-                        onClick = onSkipBackedUp,
-                        scale = ButtonDefaults.scale(focusedScale = 1.04f),
-                        shape = ButtonDefaults.shape(shape = RoundedCornerShape(12.dp)),
-                        border = ButtonDefaults.border(
-                            focusedBorder = Border(BorderStroke(2.dp, PushTVColors.TextPrimary), inset = (-1).dp)
-                        ),
-                        colors = ButtonDefaults.colors(
-                            containerColor = PushTVColors.TextPrimary.copy(alpha = 0.08f),
-                            focusedContainerColor = PushTVColors.Primary
-                        ),
-                        modifier = Modifier
-                            .weight(1.1f)
-                            .height(44.dp)
-                            .focusRequester(skipRequester)
-                            .focusProperties {
-                                right = overwriteRequester
-                            }
-                    ) {
-                        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                            Text(
-                                text = if (totalSelected == 1) "取消操作" else "跳过已备份",
-                                textAlign = TextAlign.Center,
-                                color = PushTVColors.TextPrimary
-                            )
-                        }
+    TvDialog(onDismiss = onDismiss, width = 560.dp) {
+        TvDialogTitle("重复备份提示")
+        Spacer(Modifier.height(8.dp))
+        val message = if (totalSelected == 1) {
+            "该应用在云端已有相同版本的备份。\n请选择操作策略："
+        } else {
+            "已选 ${totalSelected} 个应用，其中 ${backedUpCount} 个在云端已有相同版本备份。\n请选择备份策略："
+        }
+        TvDialogMessage(message)
+        Spacer(Modifier.height(20.dp))
+        TvDialogActions {
+            TvDialogButton(
+                label = if (totalSelected == 1) "取消操作" else "跳过已备份",
+                onClick = onSkipBackedUp,
+                modifier = Modifier
+                    .weight(1f)
+                    .focusRequester(skipRequester)
+                    .focusProperties {
+                        right = overwriteRequester
                     }
+            )
 
-                    // 全部覆盖按钮（默认灰底，选中高亮警示色）
-                    Button(
-                        onClick = onOverwriteAll,
-                        scale = ButtonDefaults.scale(focusedScale = 1.04f),
-                        shape = ButtonDefaults.shape(shape = RoundedCornerShape(12.dp)),
-                        border = ButtonDefaults.border(
-                            focusedBorder = Border(BorderStroke(2.dp, PushTVColors.TextPrimary), inset = (-1).dp)
-                        ),
-                        colors = ButtonDefaults.colors(
-                            containerColor = PushTVColors.TextPrimary.copy(alpha = 0.08f),
-                            focusedContainerColor = PushTVColors.Warning
-                        ),
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(44.dp)
-                            .focusRequester(overwriteRequester)
-                            .focusProperties {
-                                left = skipRequester
-                                right = cancelRequester
-                            }
-                    ) {
-                        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                            Text(
-                                text = if (totalSelected == 1) "覆盖备份" else "全部覆盖",
-                                textAlign = TextAlign.Center,
-                                color = PushTVColors.TextPrimary
-                            )
-                        }
-                    }
+            TvDialogButton(
+                label = if (totalSelected == 1) "覆盖备份" else "全部覆盖",
+                onClick = onOverwriteAll,
+                modifier = Modifier
+                    .weight(1f)
+                    .focusRequester(overwriteRequester)
+                    .focusProperties {
+                        left = skipRequester
+                        right = cancelRequester
+                    },
+                accent = PushTVColors.Warning
+            )
 
-                    // 取消按钮（默认灰底，选中高亮浅灰）
-                    Button(
-                        onClick = onDismiss,
-                        scale = ButtonDefaults.scale(focusedScale = 1.04f),
-                        shape = ButtonDefaults.shape(shape = RoundedCornerShape(12.dp)),
-                        border = ButtonDefaults.border(
-                            focusedBorder = Border(BorderStroke(2.dp, PushTVColors.TextPrimary), inset = (-1).dp)
-                        ),
-                        colors = ButtonDefaults.colors(
-                            containerColor = PushTVColors.TextPrimary.copy(alpha = 0.08f),
-                            focusedContainerColor = PushTVColors.TextPrimary.copy(alpha = 0.25f)
-                        ),
-                        modifier = Modifier
-                            .weight(0.8f)
-                            .height(44.dp)
-                            .focusRequester(cancelRequester)
-                            .focusProperties {
-                                left = overwriteRequester
-                            }
-                    ) {
-                        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                            Text(
-                                text = "取消",
-                                textAlign = TextAlign.Center,
-                                color = PushTVColors.TextPrimary
-                            )
-                        }
-                    }
-                }
-            }
+            TvDialogButton(
+                label = "取消",
+                onClick = onDismiss,
+                modifier = Modifier
+                    .weight(1f)
+                    .focusRequester(cancelRequester)
+                    .focusProperties {
+                        left = overwriteRequester
+                    },
+                accent = PushTVColors.TextSecondary
+            )
         }
     }
 }
@@ -1902,107 +1821,38 @@ private fun InstallPromptDialog(
 
     BackHandler(onBack = onDismiss)
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = androidx.compose.ui.window.DialogProperties(
-            dismissOnBackPress = true,
-            dismissOnClickOutside = true,
-            usePlatformDefaultWidth = false
-        )
-    ) {
-        Surface(
-            shape = RoundedCornerShape(24.dp),
-            colors = NonInteractiveSurfaceDefaults.colors(containerColor = PushTVColors.Panel),
-            modifier = Modifier
-                .width(420.dp)
-                .padding(16.dp)
-                .focusGroup()
-                .focusProperties { exit = { FocusRequester.Cancel } }
-        ) {
-            Column(
-                modifier = Modifier.padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = "下载完成",
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = PushTVColors.Success
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                val desc = if (downloadedFiles.size == 1) {
-                    "安装包已下载至“已接收文件”目录，是否立即安装？"
-                } else {
-                    "已下载 ${downloadedFiles.size} 个应用安装包至“已接收文件”目录，是否立即安装？"
-                }
-                Text(
-                    text = desc,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = PushTVColors.TextSecondary,
-                    textAlign = TextAlign.Center
-                )
-                Spacer(modifier = Modifier.height(24.dp))
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    // 立即安装按钮（默认灰底，选中高亮品牌色）
-                    Button(
-                        onClick = {
-                            downloadedFiles.firstOrNull()?.let(onInstall)
-                            onDismiss()
-                        },
-                        scale = ButtonDefaults.scale(focusedScale = 1.04f),
-                        shape = ButtonDefaults.shape(shape = RoundedCornerShape(12.dp)),
-                        border = ButtonDefaults.border(
-                            focusedBorder = Border(BorderStroke(2.dp, PushTVColors.TextPrimary), inset = (-1).dp)
-                        ),
-                        colors = ButtonDefaults.colors(
-                            containerColor = PushTVColors.TextPrimary.copy(alpha = 0.08f),
-                            focusedContainerColor = PushTVColors.Primary
-                        ),
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(44.dp)
-                            .focusRequester(installRequester)
-                            .focusProperties { right = cancelRequester }
-                    ) {
-                        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                            Text(
-                                text = "立即安装",
-                                textAlign = TextAlign.Center,
-                                color = PushTVColors.TextPrimary
-                            )
-                        }
-                    }
+    TvDialog(onDismiss = onDismiss, width = 440.dp) {
+        TvDialogTitle("下载完成")
+        Spacer(Modifier.height(8.dp))
+        val desc = if (downloadedFiles.size == 1) {
+            "安装包已下载至“已接收文件”目录，是否立即安装？"
+        } else {
+            "已下载 ${downloadedFiles.size} 个应用安装包至“已接收文件”目录，是否立即安装？"
+        }
+        TvDialogMessage(desc)
+        Spacer(Modifier.height(20.dp))
+        TvDialogActions {
+            TvDialogButton(
+                label = "立即安装",
+                onClick = {
+                    downloadedFiles.firstOrNull()?.let(onInstall)
+                    onDismiss()
+                },
+                modifier = Modifier
+                    .weight(1f)
+                    .focusRequester(installRequester)
+                    .focusProperties { right = cancelRequester }
+            )
 
-                    // 稍后按钮（默认灰底，选中高亮浅灰）
-                    Button(
-                        onClick = onDismiss,
-                        scale = ButtonDefaults.scale(focusedScale = 1.04f),
-                        shape = ButtonDefaults.shape(shape = RoundedCornerShape(12.dp)),
-                        border = ButtonDefaults.border(
-                            focusedBorder = Border(BorderStroke(2.dp, PushTVColors.TextPrimary), inset = (-1).dp)
-                        ),
-                        colors = ButtonDefaults.colors(
-                            containerColor = PushTVColors.TextPrimary.copy(alpha = 0.08f),
-                            focusedContainerColor = PushTVColors.TextPrimary.copy(alpha = 0.25f)
-                        ),
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(44.dp)
-                            .focusRequester(cancelRequester)
-                            .focusProperties { left = installRequester }
-                    ) {
-                        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                            Text(
-                                text = "稍后",
-                                textAlign = TextAlign.Center,
-                                color = PushTVColors.TextPrimary
-                            )
-                        }
-                    }
-                }
-            }
+            TvDialogButton(
+                label = "稍后",
+                onClick = onDismiss,
+                modifier = Modifier
+                    .weight(1f)
+                    .focusRequester(cancelRequester)
+                    .focusProperties { left = installRequester },
+                accent = PushTVColors.TextSecondary
+            )
         }
     }
 }
@@ -2027,99 +1877,31 @@ private fun DeleteCloudConfirmDialog(
 
     BackHandler(onBack = onDismiss)
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = androidx.compose.ui.window.DialogProperties(
-            dismissOnBackPress = true,
-            dismissOnClickOutside = true,
-            usePlatformDefaultWidth = false
-        )
-    ) {
-        Surface(
-            shape = RoundedCornerShape(24.dp),
-            colors = NonInteractiveSurfaceDefaults.colors(containerColor = PushTVColors.Panel),
-            modifier = Modifier
-                .width(420.dp)
-                .padding(16.dp)
-                .focusGroup()
-                .focusProperties { exit = { FocusRequester.Cancel } }
-        ) {
-            Column(
-                modifier = Modifier.padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = "删除云端备份",
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = PushTVColors.Error
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    text = "确定要从云端网盘删除「${item.appName}」吗？\n文件：${item.fileName}\n此操作不可撤销。",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = PushTVColors.TextSecondary,
-                    textAlign = TextAlign.Center
-                )
-                Spacer(modifier = Modifier.height(24.dp))
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    // 删除按钮（默认灰底，选中高亮危险色）
-                    Button(
-                        onClick = onConfirm,
-                        scale = ButtonDefaults.scale(focusedScale = 1.04f),
-                        shape = ButtonDefaults.shape(shape = RoundedCornerShape(12.dp)),
-                        border = ButtonDefaults.border(
-                            focusedBorder = Border(BorderStroke(2.dp, PushTVColors.TextPrimary), inset = (-1).dp)
-                        ),
-                        colors = ButtonDefaults.colors(
-                            containerColor = PushTVColors.TextPrimary.copy(alpha = 0.08f),
-                            focusedContainerColor = PushTVColors.Error
-                        ),
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(44.dp)
-                            .focusRequester(deleteRequester)
-                            .focusProperties { right = cancelRequester }
-                    ) {
-                        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                            Text(
-                                text = "确认删除",
-                                textAlign = TextAlign.Center,
-                                color = PushTVColors.TextPrimary
-                            )
-                        }
-                    }
+    TvDialog(onDismiss = onDismiss, width = 440.dp) {
+        TvDialogTitle("删除云端备份")
+        Spacer(Modifier.height(8.dp))
+        TvDialogMessage("确定要从云端网盘删除「${item.appName}」吗？\n文件：${item.fileName}\n此操作不可撤销。")
+        Spacer(Modifier.height(20.dp))
+        TvDialogActions {
+            TvDialogButton(
+                label = "确认删除",
+                onClick = onConfirm,
+                modifier = Modifier
+                    .weight(1f)
+                    .focusRequester(deleteRequester)
+                    .focusProperties { right = cancelRequester },
+                accent = PushTVColors.Error
+            )
 
-                    // 取消按钮（默认灰底，选中高亮浅灰）
-                    Button(
-                        onClick = onDismiss,
-                        scale = ButtonDefaults.scale(focusedScale = 1.04f),
-                        shape = ButtonDefaults.shape(shape = RoundedCornerShape(12.dp)),
-                        border = ButtonDefaults.border(
-                            focusedBorder = Border(BorderStroke(2.dp, PushTVColors.TextPrimary), inset = (-1).dp)
-                        ),
-                        colors = ButtonDefaults.colors(
-                            containerColor = PushTVColors.TextPrimary.copy(alpha = 0.08f),
-                            focusedContainerColor = PushTVColors.TextPrimary.copy(alpha = 0.25f)
-                        ),
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(44.dp)
-                            .focusRequester(cancelRequester)
-                            .focusProperties { left = deleteRequester }
-                    ) {
-                        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                            Text(
-                                text = "取消",
-                                textAlign = TextAlign.Center,
-                                color = PushTVColors.TextPrimary
-                            )
-                        }
-                    }
-                }
-            }
+            TvDialogButton(
+                label = "取消",
+                onClick = onDismiss,
+                modifier = Modifier
+                    .weight(1f)
+                    .focusRequester(cancelRequester)
+                    .focusProperties { left = deleteRequester },
+                accent = PushTVColors.TextSecondary
+            )
         }
     }
 }
@@ -2145,201 +1927,117 @@ private fun InsufficientStorageDialog(
 
     BackHandler(onBack = onDismiss)
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = androidx.compose.ui.window.DialogProperties(
-            dismissOnBackPress = true,
-            dismissOnClickOutside = true,
-            usePlatformDefaultWidth = false
+    TvDialog(onDismiss = onDismiss, width = 560.dp) {
+        Icon(
+            imageVector = Icons.Default.Warning,
+            contentDescription = null,
+            tint = PushTVColors.Warning,
+            modifier = Modifier.size(44.dp)
         )
-    ) {
+        Spacer(modifier = Modifier.height(14.dp))
+        TvDialogTitle("电视存储空间不足")
+        Spacer(Modifier.height(8.dp))
+
+        // 空间详情面板
         Surface(
-            shape = RoundedCornerShape(24.dp),
-            colors = NonInteractiveSurfaceDefaults.colors(containerColor = PushTVColors.Panel),
-            modifier = Modifier
-                .width(480.dp)
-                .border(1.dp, PushTVColors.TextPrimary.copy(alpha = 0.1f), RoundedCornerShape(24.dp))
+            shape = RoundedCornerShape(12.dp),
+            colors = NonInteractiveSurfaceDefaults.colors(containerColor = PushTVColors.TextPrimary.copy(alpha = 0.04f)),
+            modifier = Modifier.fillMaxWidth()
         ) {
-            Column(
-                modifier = Modifier.padding(28.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Warning,
-                    contentDescription = null,
-                    tint = PushTVColors.Warning,
-                    modifier = Modifier.size(44.dp)
-                )
-                Spacer(modifier = Modifier.height(14.dp))
-                Text(
-                    text = "电视存储空间不足",
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = PushTVColors.TextPrimary
-                )
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // 空间详情面板
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    colors = NonInteractiveSurfaceDefaults.colors(containerColor = PushTVColors.TextPrimary.copy(alpha = 0.04f)),
-                    modifier = Modifier.fillMaxWidth()
+            Column(modifier = Modifier.padding(14.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                "下载所需空间",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = PushTVColors.TextSecondary
-                            )
-                            Text(
-                                formatFileSize(warning.requiredBytes),
-                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                                color = PushTVColors.Warning
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                "当前可用空间",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = PushTVColors.TextSecondary
-                            )
-                            Text(
-                                formatFileSize(warning.usableBytes),
-                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                                color = PushTVColors.TextPrimary
-                            )
-                        }
-                        if (warning.cacheBytes > 0L) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    "历史下载缓存",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = PushTVColors.TextSecondary
-                                )
-                                Text(
-                                    formatFileSize(warning.cacheBytes),
-                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = PushTVColors.Primary
-                                )
-                            }
-                        }
-                    }
+                    Text(
+                        "下载所需空间",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = PushTVColors.TextSecondary
+                    )
+                    Text(
+                        formatFileSize(warning.requiredBytes),
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                        color = PushTVColors.Warning
+                    )
                 }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                val message = if (warning.cacheBytes > 0L) {
-                    "PushTV 检测到历史下载安装包占用了 ${formatFileSize(warning.cacheBytes)} 存储空间。建议先清理旧缓存再重试。"
-                } else {
-                    "当前电视剩余空间不足以完成本次下载，请先在电视系统设置中清理空间后再试。"
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        "当前可用空间",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = PushTVColors.TextSecondary
+                    )
+                    Text(
+                        formatFileSize(warning.usableBytes),
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                        color = PushTVColors.TextPrimary
+                    )
                 }
-                Text(
-                    text = message,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = PushTVColors.TextSecondary,
-                    textAlign = TextAlign.Center
-                )
-
-                Spacer(modifier = Modifier.height(24.dp))
-
                 if (warning.cacheBytes > 0L) {
+                    Spacer(modifier = Modifier.height(8.dp))
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        // 清理并重试按钮（默认灰底，选中高亮品牌色）
-                        Button(
-                            onClick = onCleanAndRetry,
-                            scale = ButtonDefaults.scale(focusedScale = 1.04f),
-                            shape = ButtonDefaults.shape(shape = RoundedCornerShape(12.dp)),
-                            border = ButtonDefaults.border(
-                                focusedBorder = Border(BorderStroke(2.dp, PushTVColors.TextPrimary), inset = (-1).dp)
-                            ),
-                            colors = ButtonDefaults.colors(
-                                containerColor = PushTVColors.TextPrimary.copy(alpha = 0.08f),
-                                focusedContainerColor = PushTVColors.Primary
-                            ),
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(44.dp)
-                                .focusRequester(cleanRequester)
-                                .focusProperties { right = dismissRequester }
-                        ) {
-                            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                                Text(
-                                    text = "清理旧缓存并重试",
-                                    textAlign = TextAlign.Center,
-                                    color = PushTVColors.TextPrimary
-                                )
-                            }
-                        }
-
-                        // 知道了/取消按钮（默认灰底，选中高亮浅灰）
-                        Button(
-                            onClick = onDismiss,
-                            scale = ButtonDefaults.scale(focusedScale = 1.04f),
-                            shape = ButtonDefaults.shape(shape = RoundedCornerShape(12.dp)),
-                            border = ButtonDefaults.border(
-                                focusedBorder = Border(BorderStroke(2.dp, PushTVColors.TextPrimary), inset = (-1).dp)
-                            ),
-                            colors = ButtonDefaults.colors(
-                                containerColor = PushTVColors.TextPrimary.copy(alpha = 0.08f),
-                                focusedContainerColor = PushTVColors.TextPrimary.copy(alpha = 0.25f)
-                            ),
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(44.dp)
-                                .focusRequester(dismissRequester)
-                                .focusProperties { left = cleanRequester }
-                        ) {
-                            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                                Text(
-                                    text = "知道了",
-                                    textAlign = TextAlign.Center,
-                                    color = PushTVColors.TextPrimary
-                                )
-                            }
-                        }
-                    }
-                } else {
-                    // 仅知道了按钮
-                    Button(
-                        onClick = onDismiss,
-                        scale = ButtonDefaults.scale(focusedScale = 1.04f),
-                        shape = ButtonDefaults.shape(shape = RoundedCornerShape(12.dp)),
-                        border = ButtonDefaults.border(
-                            focusedBorder = Border(BorderStroke(2.dp, PushTVColors.TextPrimary), inset = (-1).dp)
-                        ),
-                        colors = ButtonDefaults.colors(
-                            containerColor = PushTVColors.TextPrimary.copy(alpha = 0.08f),
-                            focusedContainerColor = PushTVColors.TextPrimary.copy(alpha = 0.25f)
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(44.dp)
-                            .focusRequester(dismissRequester)
-                    ) {
-                        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                            Text(
-                                text = "知道了",
-                                textAlign = TextAlign.Center,
-                                color = PushTVColors.TextPrimary
-                            )
-                        }
+                        Text(
+                            "历史下载缓存",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = PushTVColors.TextSecondary
+                        )
+                        Text(
+                            formatFileSize(warning.cacheBytes),
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                            color = PushTVColors.Primary
+                        )
                     }
                 }
             }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        val message = if (warning.cacheBytes > 0L) {
+            "PushTV 检测到历史下载安装包占用了 ${formatFileSize(warning.cacheBytes)} 存储空间。建议先清理旧缓存再重试。"
+        } else {
+            "当前电视剩余空间不足以完成本次下载，请先在电视系统设置中清理空间后再试。"
+        }
+        TvDialogMessage(message)
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        if (warning.cacheBytes > 0L) {
+            TvDialogActions {
+                TvDialogButton(
+                    label = "清理旧缓存并重试",
+                    onClick = onCleanAndRetry,
+                    modifier = Modifier
+                        .weight(1f)
+                        .focusRequester(cleanRequester)
+                        .focusProperties { right = dismissRequester }
+                )
+
+                TvDialogButton(
+                    label = "知道了",
+                    onClick = onDismiss,
+                    modifier = Modifier
+                        .weight(1f)
+                        .focusRequester(dismissRequester)
+                        .focusProperties { left = cleanRequester },
+                    accent = PushTVColors.TextSecondary
+                )
+            }
+        } else {
+            TvDialogButton(
+                label = "知道了",
+                onClick = onDismiss,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(dismissRequester),
+                accent = PushTVColors.TextSecondary
+            )
         }
     }
 }

@@ -11,8 +11,8 @@ android {
         applicationId = "com.example.pushtv"
         minSdk = 28
         targetSdk = 34
-        versionCode = 7
-        versionName = "1.6"
+        versionCode = 9
+        versionName = "1.7.0"
     }
 
     flavorDimensions += "abi"

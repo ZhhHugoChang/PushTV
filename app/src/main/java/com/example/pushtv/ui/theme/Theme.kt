@@ -20,6 +20,11 @@ object PushTVColors {
     val Warning = Color(0xFFF59E0B)
     val Error = Color(0xFFEF4444)
     val Favorite = Color(0xFFF472B6)
+    val ProbeFast = Color(0xFF6EE7B7)
+    val ProbeModerate = Color(0xFF7DD3FC)
+    val ProbeSlow = Color(0xFFFDE68A)
+    val ProbeTimeout = Color(0xFFFDBA74)
+    val ProbeUnavailable = Color(0xFFFDA4AF)
 }
 
 @OptIn(androidx.tv.material3.ExperimentalTvMaterial3Api::class)

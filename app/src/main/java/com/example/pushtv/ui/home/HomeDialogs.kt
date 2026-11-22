@@ -45,7 +45,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.*
@@ -57,6 +56,11 @@ import com.example.pushtv.ui.software.FilterMode
 import com.example.pushtv.ui.software.InstalledApp
 import com.example.pushtv.ui.software.SoftwareViewModel
 import com.example.pushtv.ui.theme.PushTVColors
+import com.example.pushtv.ui.theme.TvDialog
+import com.example.pushtv.ui.theme.TvDialogActions
+import com.example.pushtv.ui.theme.TvDialogButton
+import com.example.pushtv.ui.theme.TvDialogMessage
+import com.example.pushtv.ui.theme.TvDialogTitle
 import kotlinx.coroutines.delay
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.Key
@@ -70,7 +74,9 @@ import java.io.File
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-fun ConfirmDialog(title: String, message: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+fun ConfirmDialog(
+    title: String, message: String, onConfirm: () -> Unit, onDismiss: () -> Unit, confirmLabel: String = "确定"
+) {
     val confirmRequester = remember { FocusRequester() }
     val cancelRequester = remember { FocusRequester() }
 
@@ -84,50 +90,40 @@ fun ConfirmDialog(title: String, message: String, onConfirm: () -> Unit, onDismi
 
     BackHandler(onBack = onDismiss)
 
-    Dialog(onDismissRequest = onDismiss) {
-        Surface(
-            shape = RoundedCornerShape(24.dp),
-            colors = NonInteractiveSurfaceDefaults.colors(containerColor = PushTVColors.Panel),
-            modifier = Modifier
-                .width(360.dp)
-                .focusGroup()
-                .focusProperties { exit = { FocusRequester.Cancel } }
-        ) {
-            Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(title, style = MaterialTheme.typography.headlineSmall, color = PushTVColors.TextPrimary)
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(message, style = MaterialTheme.typography.bodyMedium, color = PushTVColors.TextSecondary, textAlign = TextAlign.Center)
-                Spacer(modifier = Modifier.height(24.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-                    Button(
-                        onClick = onConfirm,
-                        scale = ButtonDefaults.scale(focusedScale = 1f),
-                        modifier = Modifier
-                            .weight(1f)
-                            .focusRequester(confirmRequester)
-                            .focusProperties {
-                                left = FocusRequester.Cancel
-                                right = cancelRequester
-                                up = FocusRequester.Cancel
-                                down = FocusRequester.Cancel
-                            },
-                        colors = ButtonDefaults.colors(containerColor = PushTVColors.Error)
-                    ) { Text("确定") }
-                    Button(
-                        onClick = onDismiss,
-                        scale = ButtonDefaults.scale(focusedScale = 1f),
-                        modifier = Modifier
-                            .weight(1f)
-                            .focusRequester(cancelRequester)
-                            .focusProperties {
-                                left = confirmRequester
-                                right = FocusRequester.Cancel
-                                up = FocusRequester.Cancel
-                                down = FocusRequester.Cancel
-                            }
-                    ) { Text("取消") }
-                }
-            }
+    TvDialog(onDismiss = onDismiss, width = 440.dp) {
+        TvDialogTitle(title)
+        Spacer(Modifier.height(8.dp))
+        TvDialogMessage(message)
+        Spacer(Modifier.height(20.dp))
+        TvDialogActions {
+            TvDialogButton(
+                label = confirmLabel,
+                onClick = onConfirm,
+                modifier = Modifier
+                    .weight(1f)
+                    .focusRequester(confirmRequester)
+                    .focusProperties {
+                        left = FocusRequester.Cancel
+                        right = cancelRequester
+                        up = FocusRequester.Cancel
+                        down = FocusRequester.Cancel
+                    },
+                accent = PushTVColors.Error
+            )
+            TvDialogButton(
+                label = "取消",
+                onClick = onDismiss,
+                modifier = Modifier
+                    .weight(1f)
+                    .focusRequester(cancelRequester)
+                    .focusProperties {
+                        left = confirmRequester
+                        right = FocusRequester.Cancel
+                        up = FocusRequester.Cancel
+                        down = FocusRequester.Cancel
+                    },
+                accent = PushTVColors.TextSecondary
+            )
         }
     }
 }

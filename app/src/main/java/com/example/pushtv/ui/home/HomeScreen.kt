@@ -90,7 +90,7 @@ internal object TvFocusKeys {
     const val SOFTWARE_ALL = "software:filter:all"
     const val SOFTWARE_FAVORITES = "software:filter:favorites"
     const val SOFTWARE_HIDE_SYSTEM = "software:hide_system"
-    const val SOFTWARE_GITHUB_TOKEN = "software:github_token"
+    const val SOFTWARE_SETTINGS = "software:settings"
     const val SOFTWARE_CHECK = "software:check"
 
     fun file(path: String) = "home:file:$path"
@@ -104,10 +104,12 @@ internal object TvFocusKeys {
         SOFTWARE_ALL,
         SOFTWARE_FAVORITES,
         SOFTWARE_HIDE_SYSTEM,
-        SOFTWARE_GITHUB_TOKEN,
+        SOFTWARE_SETTINGS,
         SOFTWARE_CHECK
     )
 }
+
+private const val SOFTWARE_SETTINGS_SCREEN = 4
 
 private enum class FocusLayer {
     CONTENT,
@@ -138,11 +140,11 @@ private fun KeepScreenOnWhileTransfersActive() {
 @Composable
 fun HomeScreen(viewModel: HomeViewModel = viewModel(), softwareViewModel: SoftwareViewModel = viewModel()) {
     val context = LocalContext.current
+    val proxyInstallConfirmations by softwareViewModel.proxyInstallConfirmations.collectAsStateWithLifecycle()
     val configuration = LocalConfiguration.current
     val isMobile = configuration.screenWidthDp < 600
     val fileList by viewModel.fileList.collectAsStateWithLifecycle()
-    val ipAddress by viewModel.ipAddress.collectAsStateWithLifecycle()
-    val qrBitmap by viewModel.qrBitmap.collectAsStateWithLifecycle()
+    val lanAccess by viewModel.lanAccess.collectAsStateWithLifecycle()
     val storageInfo by viewModel.storageInfo.collectAsStateWithLifecycle()
     val softwareFilterMode by softwareViewModel.filterMode.collectAsStateWithLifecycle()
 
@@ -217,7 +219,7 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel(), softwareViewModel: Softwa
         BackupManager.checkWebDavStatus(context)
     }
 
-    BackHandler(enabled = currentScreen != 2 && currentScreen != 3 && (focusLayer == FocusLayer.CONTENT || focusLayer == FocusLayer.DRAWER)) {
+    BackHandler(enabled = currentScreen in 0..1 && (focusLayer == FocusLayer.CONTENT || focusLayer == FocusLayer.DRAWER)) {
         if (focusLayer == FocusLayer.DRAWER) {
             closeDrawerAndRestore()
         } else if (currentScreen != 0) {
@@ -255,7 +257,7 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel(), softwareViewModel: Softwa
         ) {
             if (currentScreen == 0) {
                 HomeContent(
-                    isMobile, ipAddress, qrBitmap, storageInfo, fileList,
+                    isMobile, lanAccess.address, lanAccess.qrCode, storageInfo, fileList,
                     isFocusActive = focusLayer == FocusLayer.CONTENT,
                     preferredFocusKey = lastHomeFocusKey,
                     onFocusKeyChanged = { lastHomeFocusKey = it },
@@ -331,9 +333,14 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel(), softwareViewModel: Softwa
                 )
             } else if (currentScreen == 1) {
                 SoftwareListScreen(
+                    viewModel = softwareViewModel,
                     isFocusActive = focusLayer == FocusLayer.CONTENT,
                     preferredFocusKey = lastSoftwareFocusKey,
                     onFocusKeyChanged = { lastSoftwareFocusKey = it },
+                    onOpenSettings = {
+                        lastSoftwareFocusKey = TvFocusKeys.SOFTWARE_SETTINGS
+                        currentScreen = SOFTWARE_SETTINGS_SCREEN
+                    },
                     onItemClick = { app ->
                         drawerOriginKey = TvFocusKeys.app(app.packageName)
                         softwareViewModel.checkUpdateStatus(app)
@@ -372,6 +379,14 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel(), softwareViewModel: Softwa
                     onNavigateBack = {
                         currentScreen = 0
                         lastHomeFocusKey = TvFocusKeys.HOME_BACKUP
+                        restoreFocusGeneration++
+                    }
+                )
+            } else if (currentScreen == SOFTWARE_SETTINGS_SCREEN) {
+                SoftwareSettingsScreen(
+                    viewModel = softwareViewModel,
+                    onNavigateBack = {
+                        currentScreen = 1
                         restoreFocusGeneration++
                     }
                 )
@@ -433,5 +448,19 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel(), softwareViewModel: Softwa
                 restoreFocusGeneration++
             }
         )
+    }
+
+    if (confirmationRequest == null && editingUrlApp == null) {
+        proxyInstallConfirmations.firstOrNull()?.let { request ->
+            key(request.transferId) {
+                ConfirmDialog(
+                    title = "确认安装",
+                    message = "${request.appName} 通过 ${request.route} 下载，无法确认文件与 GitHub 上的原件一致。仍要继续安装吗？",
+                    onConfirm = { softwareViewModel.confirmProxyInstall(request.transferId, true) },
+                    onDismiss = { softwareViewModel.confirmProxyInstall(request.transferId, false) },
+                    confirmLabel = "继续安装"
+                )
+            }
+        }
     }
 }
