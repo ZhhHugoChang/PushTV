@@ -28,13 +28,13 @@
 
 ## 🚀 快速开始
 
-根据电视的 Android 版本和支持的 CPU 架构选择安装包。以下是 1.7.0 的三个构建版本。
+根据电视的 Android 版本和支持的 CPU 架构选择安装包。
 
 | 安装包 | 适用设备 |
 | --- | --- |
-| `PushTV_v1.7.0-legacy_release_armeabi-v7a.apk` | 支持 32 位 ARM，最低 Android 6.0（API 23），适合 Android 6.0–8.1 的电视 |
-| `PushTV_v1.7.0_release_arm64-v8a.apk` | 支持 64 位 ARM，最低 Android 9.0（API 28） |
-| `PushTV_v1.7.0_release_armeabi-v7a.apk` | 支持 32 位 ARM，最低 Android 9.0（API 28） |
+| `PushTV_v<版本号>-legacy_release_armeabi-v7a.apk` | 支持 32 位 ARM，最低 Android 6.0（API 23），适合 Android 6.0–8.1 的电视 |
+| `PushTV_v<版本号>_release_arm64-v8a.apk` | 支持 64 位 ARM，最低 Android 9.0（API 28） |
+| `PushTV_v<版本号>_release_armeabi-v7a.apk` | 支持 32 位 ARM，最低 Android 9.0（API 28） |
 
 1. **无线传包**。打开电视上的 PushTV，用同一局域网内的手机或电脑扫码，或输入电视显示的地址（如 `http://192.168.1.5:8899`），即可上传 APK。
 2. **云端备份**。在电视主页进入「备份与恢复」，配置 WebDAV 服务器地址与账号。
