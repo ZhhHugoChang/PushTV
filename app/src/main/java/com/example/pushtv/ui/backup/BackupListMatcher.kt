@@ -15,7 +15,7 @@ internal data class MatchedBackupLists(
 
 internal object BackupListMatcher {
     private val invalidFileNameChars = Regex("[\\\\/:*?\"<>|\\s]")
-    private val backupFilePattern = Regex("^(.*)_v([^_]+)\\.apk$", RegexOption.IGNORE_CASE)
+    private val backupFilePattern = Regex("^(.*)_v(.+)\\.apk$", RegexOption.IGNORE_CASE)
 
     fun match(
         installedApps: List<BackupAppItem>,

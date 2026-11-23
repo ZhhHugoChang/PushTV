@@ -2,10 +2,6 @@
 
 package com.example.pushtv.ui.home
 
-import com.example.pushtv.logging.AppLog
-
-import android.content.Context
-import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
@@ -45,7 +41,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.*
 import coil.compose.AsyncImage
@@ -70,7 +65,6 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.foundation.gestures.scrollBy
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
-import java.io.File
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -125,19 +119,5 @@ fun ConfirmDialog(
                 accent = PushTVColors.TextSecondary
             )
         }
-    }
-}
-
-fun installApk(context: Context, apkFile: File) {
-    try {
-        val intent = Intent(Intent.ACTION_VIEW)
-        val uri = FileProvider.getUriForFile(context, context.packageName + ".fileprovider", apkFile)
-        intent.setDataAndType(uri, "application/vnd.android.package-archive")
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        context.startActivity(intent)
-        AppLog.info("Installer", "Installer opened for ${apkFile.name}")
-    } catch (e: Exception) {
-        AppLog.error("Installer", "Could not open installer for ${apkFile.name}", e)
     }
 }

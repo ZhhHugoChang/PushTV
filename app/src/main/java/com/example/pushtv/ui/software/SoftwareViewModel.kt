@@ -16,6 +16,7 @@ import com.example.pushtv.network.ProgressUpdateLimiter
 import com.example.pushtv.utils.Events
 import com.example.pushtv.utils.CompatibleFileMover
 import com.example.pushtv.utils.VersionComparator
+import com.example.pushtv.utils.installApk
 import io.ktor.client.*
 import io.ktor.client.engine.okhttp.*
 import io.ktor.client.plugins.*
@@ -624,7 +625,7 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
                     break
                 }
                 moveCompletedDownload(partFile, finalFile)
-                triggerInstallation(finalFile)
+                installApk(context, finalFile)
                 TransferManager.markComplete(transferId)
                 AppLog.info(
                     "Download",
@@ -779,27 +780,6 @@ class SoftwareViewModel(application: Application) : AndroidViewModel(application
         } catch (e: Exception) {
             AppLog.error("UpdateCheck", "Could not resolve GitHub release URL", e)
             emptyList()
-        }
-    }
-
-    private suspend fun triggerInstallation(file: File) {
-        withContext(Dispatchers.Main) {
-            try {
-                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW)
-                val uri = androidx.core.content.FileProvider.getUriForFile(
-                    context,
-                    "${context.packageName}.fileprovider",
-                    file
-                )
-                intent.setDataAndType(uri, "application/vnd.android.package-archive")
-                intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                intent.addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                context.startActivity(intent)
-                AppLog.info("Installer", "Installer opened for ${file.name}")
-            } catch (e: Exception) {
-                AppLog.error("Installer", "Could not open installer for ${file.name}", e)
-                android.widget.Toast.makeText(context, "无法启动安装，请手动安装 APK", android.widget.Toast.LENGTH_LONG).show()
-            }
         }
     }
 

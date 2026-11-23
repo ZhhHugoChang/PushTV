@@ -53,7 +53,7 @@ import com.example.pushtv.data.CloudAppInstallStatus
 import com.example.pushtv.data.WebDavStatus
 import com.example.pushtv.ui.home.ActionItem
 import com.example.pushtv.ui.home.ConfirmDialog
-import com.example.pushtv.ui.home.installApk
+import com.example.pushtv.utils.installApk
 import com.example.pushtv.ui.theme.PushTVColors
 import com.example.pushtv.ui.theme.TvDialog
 import com.example.pushtv.ui.theme.TvDialogActions

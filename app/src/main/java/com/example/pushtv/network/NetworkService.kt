@@ -17,6 +17,7 @@ import com.example.pushtv.data.WebDavConfig
 import com.example.pushtv.network.WebDavClient
 import com.example.pushtv.logging.AppLog
 import com.example.pushtv.utils.CompatibleFileMover
+import com.example.pushtv.utils.installApk
 import io.ktor.server.application.*
 import io.ktor.server.engine.*
 import io.ktor.server.netty.*
@@ -402,7 +403,7 @@ class NetworkService : Service() {
                                     ContentType.Application.Json,
                                     HttpStatusCode.Created
                                 )
-                                triggerInstallation(savedFile)
+                                installApk(applicationContext, savedFile)
                             } else {
                                 AppLog.warn("Upload", "Upload request contained no file")
                                 call.respondText(
@@ -446,24 +447,6 @@ class NetworkService : Service() {
 
     private fun moveCompletedFile(source: File, destination: File) {
         CompatibleFileMover.moveReplacing(source, destination)
-    }
-
-    private fun triggerInstallation(apkFile: File) {
-        try {
-            val intent = Intent(Intent.ACTION_VIEW)
-            val uri = androidx.core.content.FileProvider.getUriForFile(
-                applicationContext, 
-                applicationContext.packageName + ".fileprovider", 
-                apkFile
-            )
-            intent.setDataAndType(uri, "application/vnd.android.package-archive")
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            startActivity(intent)
-            AppLog.info("Installer", "Installer opened for ${apkFile.name}")
-        } catch (e: Exception) {
-            AppLog.error("Installer", "Could not open installer for ${apkFile.name}", e)
-        }
     }
 
     private fun loadAssetFile(path: String): String {
